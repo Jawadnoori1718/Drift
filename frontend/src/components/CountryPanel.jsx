@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { STATIC_COUNTRY_DATA, flagFromISO2 } from '../data/countries';
-import { getHistory, getForecast } from '../lib/backend';
+import { getHistory, getForecast, getSimilar } from '../lib/backend';
 import HistoryChart from './HistoryChart';
 
 const METRIC_DEFS = {
@@ -141,6 +141,7 @@ export default function CountryPanel({
   yearData,
   year,
   isLatestYear,
+  onSelectIso2,
   onClose,
 }) {
   const meta = STATIC_COUNTRY_DATA[feature?.id];
@@ -157,6 +158,7 @@ export default function CountryPanel({
   // ── Historical series + ML forecast for the chart ──────────────────────
   const [history,  setHistory]  = useState(null);
   const [forecast, setForecast] = useState(null);
+  const [similar,  setSimilar]  = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -173,6 +175,16 @@ export default function CountryPanel({
 
     return () => { cancelled = true; };
   }, [iso2, selectedMetric]);
+
+  // Statistically similar countries (k-means + nearest neighbours)
+  useEffect(() => {
+    let cancelled = false;
+    setSimilar(null);
+    getSimilar(iso2)
+      .then((s) => { if (!cancelled) setSimilar(s); })
+      .catch(() => { if (!cancelled) setSimilar(null); });
+    return () => { cancelled = true; };
+  }, [iso2]);
 
   const rankInfo = useMemo(() => {
     if (!heroData || value == null) return null;
@@ -270,6 +282,38 @@ export default function CountryPanel({
                 {forecast.model} model, {forecast.window_start}–{forecast.window_end}
               </div>
             )}
+          </div>
+        </>
+      )}
+
+      {/* Statistically similar countries */}
+      {similar?.neighbors?.length > 0 && (
+        <>
+          <div className="cp-section">MOST SIMILAR COUNTRIES</div>
+          <div className="cp-similar">
+            {similar.neighbors.slice(0, 6).map((nb, i) => {
+              const maxD = similar.neighbors[similar.neighbors.length - 1].distance || 1;
+              const closeness = Math.max(8, 100 * (1 - nb.distance / (maxD * 1.15)));
+              return (
+                <button
+                  key={nb.iso2}
+                  className="cp-sim-row"
+                  onClick={() => onSelectIso2 && onSelectIso2(nb.iso2)}
+                  title={`Statistical distance ${nb.distance.toFixed(2)} — click to view`}
+                >
+                  <span className="cp-sim-rank">{i + 1}</span>
+                  <span className="cp-sim-flag">{flagFromISO2(nb.iso2)}</span>
+                  <span className="cp-sim-name">{nb.name}</span>
+                  <span className="cp-sim-bar-track">
+                    <span className="cp-sim-bar" style={{ width: `${closeness}%` }} />
+                  </span>
+                </button>
+              );
+            })}
+            <div className="cp-sim-note">
+              k-means over {similar.features_used} normalized indicators
+              · {similar.countries_compared} countries compared
+            </div>
           </div>
         </>
       )}

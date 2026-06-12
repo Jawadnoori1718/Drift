@@ -5,6 +5,7 @@ import GlobeView from './components/GlobeView';
 import LayerPanel from './components/LayerPanel';
 import CountryPanel from './components/CountryPanel';
 import TimeSlider from './components/TimeSlider';
+import CorrelationPanel from './components/CorrelationPanel';
 import ErrorBoundary from './components/ErrorBoundary';
 
 import { STATIC_COUNTRY_DATA, flagFromISO2 } from './data/countries';
@@ -100,6 +101,9 @@ export default function App() {
 
   // ── Computed trade arcs ─────────────────────────────────────────────────
   const [tradeArcs, setTradeArcs] = useState(null);  // { src, flows }
+
+  // ── Correlation explorer modal ──────────────────────────────────────────
+  const [correlateOpen, setCorrelateOpen] = useState(false);
 
   const [winW, setWinW] = useState(() => (typeof window !== 'undefined' ? window.innerWidth  : 1280));
   const [winH, setWinH] = useState(() => (typeof window !== 'undefined' ? window.innerHeight : 900));
@@ -362,13 +366,13 @@ export default function App() {
     const onKey = (e) => {
       const inInput = ['INPUT','TEXTAREA'].includes(document.activeElement?.tagName);
       if      (e.key === '/' && !inInput)  { e.preventDefault(); document.getElementById('search-input')?.focus(); setSearchOpen(true); }
-      else if (e.key === 'Escape')          { if (searchOpen) { setSearchOpen(false); document.getElementById('search-input')?.blur(); } else if (selected) { handleClear(); } }
+      else if (e.key === 'Escape')          { if (correlateOpen) { setCorrelateOpen(false); } else if (searchOpen) { setSearchOpen(false); document.getElementById('search-input')?.blur(); } else if (selected) { handleClear(); } }
       else if (e.key === ' ' && !inInput)  { e.preventDefault(); setSpinning((s) => !s); }
       else if ((e.key === 'd' || e.key === 'D') && !inInput) { setDark((v) => !v); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selected, searchOpen, handleClear, setDark]);
+  }, [selected, searchOpen, correlateOpen, handleClear, setDark]);
 
   // Year-aware data slice for the globe (carry-forward), latest as fallback
   const currentMetricData = timeline
@@ -412,6 +416,13 @@ export default function App() {
         </div>
 
         <div className="topbar-tools">
+          <button
+            className="tool"
+            onClick={() => setCorrelateOpen(true)}
+            title="Plot any two metrics against each other"
+          >
+            ⊞ Correlate
+          </button>
           <button
             className={`tool ${spinning ? 'active' : ''}`}
             onClick={() => setSpinning((s) => !s)}
@@ -501,11 +512,21 @@ export default function App() {
               yearData={currentMetricData}
               year={displayYear}
               isLatestYear={isLatestYear}
+              onSelectIso2={(iso2) => {
+                const f = globeApiRef.current?.getCountryByISO2(iso2);
+                if (f) handleSelect(f);
+              }}
               onClose={handleClear}
             />
           </ErrorBoundary>
         )}
       </div>
+
+      {correlateOpen && (
+        <ErrorBoundary>
+          <CorrelationPanel onClose={() => setCorrelateOpen(false)} />
+        </ErrorBoundary>
+      )}
 
       <footer className="footer">
         <span>Drift · Global Analytics</span>
