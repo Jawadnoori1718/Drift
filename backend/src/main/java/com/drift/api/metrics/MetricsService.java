@@ -1,217 +1,162 @@
 package com.drift.api.metrics;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.PostConstruct;
+import com.drift.api.db.*;
+import com.drift.api.etl.EtlService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
-import java.io.InputStream;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Read side of the metrics data: serves latest values, per-year slices, full
+ * series matrices, and per-country histories from the database, with
+ * in-memory caches that are rebuilt whenever the ETL completes.
+ */
 @Service
 public class MetricsService {
 
     private static final Logger log = LoggerFactory.getLogger(MetricsService.class);
 
-    // World Bank indicators fetched live
-    private static final Map<String, String> WB_INDICATORS = new LinkedHashMap<>();
-    static {
-        WB_INDICATORS.put("gdp",              "NY.GDP.PCAP.CD");
-        WB_INDICATORS.put("co2",              "EN.ATM.CO2E.PC");
-        WB_INDICATORS.put("life_expectancy",  "SP.DYN.LE00.IN");
-        WB_INDICATORS.put("internet",         "IT.NET.USER.ZS");
-        WB_INDICATORS.put("pop_density",      "EN.POP.DNST");
-        WB_INDICATORS.put("gini",             "SI.POV.GINI");
-        WB_INDICATORS.put("unemployment",     "SL.UEM.TOTL.ZS");
-        WB_INDICATORS.put("urban_pop",        "SP.URB.TOTL.IN.ZS");
-        WB_INDICATORS.put("health_exp",       "SH.XPD.CHEX.GD.ZS");
-        WB_INDICATORS.put("military_exp",     "MS.MIL.XPND.GD.ZS");
-        WB_INDICATORS.put("infant_mortality", "SP.DYN.IMRT.IN");
-        WB_INDICATORS.put("forest_cover",     "AG.LND.FRST.ZS");
-        WB_INDICATORS.put("electricity_access","EG.ELC.ACCS.ZS");
+    private final JdbcTemplate jdbc;
+    private final MetricRepository metricRepository;
+    private final CountryRepository countryRepository;
+    private final ObservationRepository observationRepository;
+
+    // metric key → (iso2 → latest value)
+    private final Map<String, Map<String, Double>> latestCache = new ConcurrentHashMap<>();
+    // metric key → (year → (iso2 → value)) — full matrix for the time slider
+    private final Map<String, Map<Integer, Map<String, Double>>> seriesCache = new ConcurrentHashMap<>();
+
+    public MetricsService(JdbcTemplate jdbc,
+                          MetricRepository metricRepository,
+                          CountryRepository countryRepository,
+                          ObservationRepository observationRepository,
+                          EtlService etlService) {
+        this.jdbc = jdbc;
+        this.metricRepository = metricRepository;
+        this.countryRepository = countryRepository;
+        this.observationRepository = observationRepository;
+        etlService.onComplete(this::rebuildCaches);
     }
 
-    // mrv=1 = single most-recent value per country (~195 records, fits in per_page=300)
-    private static final String WB_URL =
-        "https://api.worldbank.org/v2/country/all/indicator/%s?format=json&per_page=300&mrv=1";
-
-    private final RestTemplate restTemplate;
-    private final ObjectMapper mapper = new ObjectMapper();
-
-    // cache holds the live merged dataset; starts from fallback, enriched by WB
-    private final Map<String, Map<String, Double>> cache = new ConcurrentHashMap<>();
-
-    public MetricsService() {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(8_000);
-        factory.setReadTimeout(30_000);
-        this.restTemplate = new RestTemplate(factory);
+    /** Build caches once the seed has been loaded (runs before the async ETL finishes). */
+    @EventListener(ApplicationReadyEvent.class)
+    @Order(10)
+    public void warmUp() {
+        rebuildCaches();
     }
 
-    @PostConstruct
-    public void init() {
-        loadFallback();
-        Thread.ofVirtual().start(this::refresh);
-    }
+    public synchronized void rebuildCaches() {
+        long start = System.currentTimeMillis();
+        Map<String, Map<String, Double>> latest = new HashMap<>();
+        Map<String, Map<Integer, Map<String, Double>>> series = new HashMap<>();
 
-    @Scheduled(fixedDelay = 12 * 60 * 60 * 1000L, initialDelay = 12 * 60 * 60 * 1000L)
-    public void scheduledRefresh() {
-        refresh();
-    }
+        for (Metric metric : metricRepository.findAll()) {
+            List<Map<String, Object>> rows = jdbc.queryForList("""
+                SELECT c.iso2, o.obs_year, o.obs_value
+                FROM observation o
+                JOIN country c ON c.id = o.country_id
+                WHERE o.metric_id = ?
+                """, metric.getId());
 
-    // Load bundled static data so the API responds immediately on startup
-    private void loadFallback() {
-        try (InputStream is = getClass().getClassLoader().getResourceAsStream("fallback-metrics.json")) {
-            if (is == null) {
-                log.warn("fallback-metrics.json not found on classpath");
-                return;
-            }
-            JsonNode root = mapper.readTree(is);
-            root.fields().forEachRemaining(entry -> {
-                String metric = entry.getKey();
-                Map<String, Double> values = new HashMap<>();
-                entry.getValue().fields().forEachRemaining(kv ->
-                    values.put(kv.getKey(), kv.getValue().asDouble())
-                );
-                cache.put(metric, new ConcurrentHashMap<>(values));
-            });
-            log.info("Fallback metrics loaded: {} indicators", cache.size());
-        } catch (Exception e) {
-            log.error("Failed to load fallback metrics: {}", e.getMessage());
-        }
-    }
+            Map<Integer, Map<String, Double>> byYear = new TreeMap<>();
+            Map<String, Double> latestVals = new HashMap<>();
+            Map<String, Integer> latestYears = new HashMap<>();
 
-    // Fetch World Bank data and merge (WB values override fallback per-country)
-    public void refresh() {
-        log.info("Fetching World Bank metrics ({} indicators)...", WB_INDICATORS.size());
-        for (Map.Entry<String, String> entry : WB_INDICATORS.entrySet()) {
-            String key       = entry.getKey();
-            String indicator = entry.getValue();
-            try {
-                Map<String, Double> fresh = fetchIndicator(indicator);
-                if (!fresh.isEmpty()) {
-                    // Merge: keep fallback values for countries not in WB response
-                    Map<String, Double> merged = new ConcurrentHashMap<>(
-                        cache.getOrDefault(key, Collections.emptyMap())
-                    );
-                    merged.putAll(fresh);
-                    cache.put(key, merged);
-                    log.info("  {} → {} countries (WB)", key, fresh.size());
-                } else {
-                    log.warn("  {} → empty WB response, keeping fallback", key);
+            for (Map<String, Object> row : rows) {
+                String iso2 = (String) row.get("iso2");
+                int year    = ((Number) row.get("obs_year")).intValue();
+                double val  = ((Number) row.get("obs_value")).doubleValue();
+
+                byYear.computeIfAbsent(year, y -> new HashMap<>()).put(iso2, val);
+                if (year >= latestYears.getOrDefault(iso2, Integer.MIN_VALUE)) {
+                    latestYears.put(iso2, year);
+                    latestVals.put(iso2, val);
                 }
-            } catch (Exception e) {
-                log.warn("  {} → WB fetch failed ({}), keeping fallback", key, e.getMessage());
+            }
+            if (!latestVals.isEmpty()) {
+                latest.put(metric.getKey(), latestVals);
+                series.put(metric.getKey(), byYear);
             }
         }
-        log.info("Metrics ready: {} indicators", cache.size());
+
+        latestCache.clear();
+        latestCache.putAll(latest);
+        seriesCache.clear();
+        seriesCache.putAll(series);
+        log.info("Metric caches rebuilt: {} metrics in {}ms",
+            latest.size(), System.currentTimeMillis() - start);
     }
 
-    public Map<String, Map<String, Double>> getAllMetrics() {
-        return Collections.unmodifiableMap(cache);
+    // ── Query API ────────────────────────────────────────────────────────────
+
+    /** Latest value per country, for every metric. Shape: {metric: {iso2: value}} */
+    public Map<String, Map<String, Double>> getAllLatest() {
+        return Collections.unmodifiableMap(latestCache);
+    }
+
+    /** Latest value per country for one metric. */
+    public Map<String, Double> getLatest(String metricKey) {
+        Map<String, Double> data = latestCache.get(metricKey);
+        if (data == null) throw new IllegalArgumentException("Unknown metric: " + metricKey);
+        return data;
+    }
+
+    /** Full time matrix for one metric: {year: {iso2: value}} — powers the time slider. */
+    public Map<Integer, Map<String, Double>> getSeries(String metricKey) {
+        Map<Integer, Map<String, Double>> data = seriesCache.get(metricKey);
+        if (data == null) throw new IllegalArgumentException("Unknown metric: " + metricKey);
+        return data;
+    }
+
+    /** One year's slice for one metric: {iso2: value}. */
+    public Map<String, Double> getYear(String metricKey, int year) {
+        Map<String, Double> slice = getSeries(metricKey).get(year);
+        return slice != null ? slice : Map.of();
+    }
+
+    /** Historical series for one country+metric: ordered list of {year, value}. */
+    public List<Map<String, Object>> getHistory(String iso2, String metricKey) {
+        Country country = countryRepository.findByIso2(iso2.toUpperCase())
+            .orElseThrow(() -> new NoSuchElementException("Unknown country: " + iso2));
+        Metric metric = metricRepository.findByKey(metricKey)
+            .orElseThrow(() -> new IllegalArgumentException("Unknown metric: " + metricKey));
+
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Observation o : observationRepository.findHistory(country.getId(), metric.getId())) {
+            out.add(Map.of("year", o.getYear(), "value", o.getValue()));
+        }
+        return out;
+    }
+
+    /** Catalogue + coverage info for every metric. */
+    public List<Map<String, Object>> getMeta() {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Metric m : metricRepository.findAll()) {
+            Map<Integer, Map<String, Double>> series = seriesCache.get(m.getKey());
+            Map<String, Object> info = new LinkedHashMap<>();
+            info.put("key", m.getKey());
+            info.put("label", m.getLabel());
+            info.put("unit", m.getUnit());
+            info.put("source", m.getSource());
+            if (series != null && !series.isEmpty()) {
+                List<Integer> years = new ArrayList<>(series.keySet());
+                info.put("min_year", years.get(0));
+                info.put("max_year", years.get(years.size() - 1));
+                info.put("countries", latestCache.getOrDefault(m.getKey(), Map.of()).size());
+            }
+            out.add(info);
+        }
+        return out;
     }
 
     public boolean isReady() {
-        return !cache.isEmpty();
-    }
-
-    // ── World Bank fetch ──────────────────────────────────────────────────────
-
-    private Map<String, Double> fetchIndicator(String indicator) throws Exception {
-        String url  = String.format(WB_URL, indicator);
-        String json = restTemplate.getForObject(url, String.class);
-        if (json == null) return Map.of();
-
-        JsonNode root = mapper.readTree(json);
-        if (!root.isArray() || root.size() < 2) {
-            log.warn("Unexpected WB response structure for {}", indicator);
-            return Map.of();
-        }
-        JsonNode dataArray = root.get(1);
-        if (dataArray == null || !dataArray.isArray()) return Map.of();
-
-        Map<String, Double> result = new HashMap<>();
-        for (JsonNode item : dataArray) {
-            JsonNode valNode = item.get("value");
-            if (valNode == null || valNode.isNull()) continue;
-
-            double value = valNode.asDouble();
-            if (!Double.isFinite(value)) continue;
-
-            String iso3 = item.has("countryiso3code")
-                ? item.get("countryiso3code").asText("").toUpperCase()
-                : "";
-            if (iso3.isBlank()) continue;
-
-            String iso2 = ISO3_TO_ISO2.get(iso3);
-            if (iso2 == null) continue;
-
-            result.put(iso2, value);
-        }
-        return result;
-    }
-
-    // ── ISO 3166-1 alpha-3 → alpha-2 ─────────────────────────────────────────
-
-    private static final Map<String, String> ISO3_TO_ISO2 = buildIso3Map();
-
-    private static Map<String, String> buildIso3Map() {
-        Map<String, String> m = new HashMap<>();
-        m.put("AFG","AF"); m.put("ALB","AL"); m.put("DZA","DZ"); m.put("AND","AD");
-        m.put("AGO","AO"); m.put("ATG","AG"); m.put("ARG","AR"); m.put("ARM","AM");
-        m.put("AUS","AU"); m.put("AUT","AT"); m.put("AZE","AZ"); m.put("BHS","BS");
-        m.put("BHR","BH"); m.put("BGD","BD"); m.put("BRB","BB"); m.put("BLR","BY");
-        m.put("BEL","BE"); m.put("BLZ","BZ"); m.put("BEN","BJ"); m.put("BTN","BT");
-        m.put("BOL","BO"); m.put("BIH","BA"); m.put("BWA","BW"); m.put("BRA","BR");
-        m.put("BRN","BN"); m.put("BGR","BG"); m.put("BFA","BF"); m.put("BDI","BI");
-        m.put("CPV","CV"); m.put("KHM","KH"); m.put("CMR","CM"); m.put("CAN","CA");
-        m.put("CAF","CF"); m.put("TCD","TD"); m.put("CHL","CL"); m.put("CHN","CN");
-        m.put("COL","CO"); m.put("COM","KM"); m.put("COD","CD"); m.put("COG","CG");
-        m.put("CRI","CR"); m.put("CIV","CI"); m.put("HRV","HR"); m.put("CUB","CU");
-        m.put("CYP","CY"); m.put("CZE","CZ"); m.put("DNK","DK"); m.put("DJI","DJ");
-        m.put("DOM","DO"); m.put("ECU","EC"); m.put("EGY","EG"); m.put("SLV","SV");
-        m.put("GNQ","GQ"); m.put("ERI","ER"); m.put("EST","EE"); m.put("SWZ","SZ");
-        m.put("ETH","ET"); m.put("FJI","FJ"); m.put("FIN","FI"); m.put("FRA","FR");
-        m.put("GAB","GA"); m.put("GMB","GM"); m.put("GEO","GE"); m.put("DEU","DE");
-        m.put("GHA","GH"); m.put("GRC","GR"); m.put("GRD","GD"); m.put("GTM","GT");
-        m.put("GIN","GN"); m.put("GNB","GW"); m.put("GUY","GY"); m.put("HTI","HT");
-        m.put("HND","HN"); m.put("HUN","HU"); m.put("ISL","IS"); m.put("IND","IN");
-        m.put("IDN","ID"); m.put("IRN","IR"); m.put("IRQ","IQ"); m.put("IRL","IE");
-        m.put("ISR","IL"); m.put("ITA","IT"); m.put("JAM","JM"); m.put("JPN","JP");
-        m.put("JOR","JO"); m.put("KAZ","KZ"); m.put("KEN","KE"); m.put("KIR","KI");
-        m.put("PRK","KP"); m.put("KOR","KR"); m.put("KWT","KW"); m.put("KGZ","KG");
-        m.put("LAO","LA"); m.put("LVA","LV"); m.put("LBN","LB"); m.put("LSO","LS");
-        m.put("LBR","LR"); m.put("LBY","LY"); m.put("LIE","LI"); m.put("LTU","LT");
-        m.put("LUX","LU"); m.put("MDG","MG"); m.put("MWI","MW"); m.put("MYS","MY");
-        m.put("MDV","MV"); m.put("MLI","ML"); m.put("MLT","MT"); m.put("MHL","MH");
-        m.put("MRT","MR"); m.put("MUS","MU"); m.put("MEX","MX"); m.put("FSM","FM");
-        m.put("MDA","MD"); m.put("MCO","MC"); m.put("MNG","MN"); m.put("MNE","ME");
-        m.put("MAR","MA"); m.put("MOZ","MZ"); m.put("MMR","MM"); m.put("NAM","NA");
-        m.put("NRU","NR"); m.put("NPL","NP"); m.put("NLD","NL"); m.put("NZL","NZ");
-        m.put("NIC","NI"); m.put("NER","NE"); m.put("NGA","NG"); m.put("MKD","MK");
-        m.put("NOR","NO"); m.put("OMN","OM"); m.put("PAK","PK"); m.put("PLW","PW");
-        m.put("PAN","PA"); m.put("PNG","PG"); m.put("PRY","PY"); m.put("PER","PE");
-        m.put("PHL","PH"); m.put("POL","PL"); m.put("PRT","PT"); m.put("QAT","QA");
-        m.put("ROU","RO"); m.put("RUS","RU"); m.put("RWA","RW"); m.put("KNA","KN");
-        m.put("LCA","LC"); m.put("VCT","VC"); m.put("WSM","WS"); m.put("SMR","SM");
-        m.put("STP","ST"); m.put("SAU","SA"); m.put("SEN","SN"); m.put("SRB","RS");
-        m.put("SLE","SL"); m.put("SGP","SG"); m.put("SVK","SK"); m.put("SVN","SI");
-        m.put("SLB","SB"); m.put("SOM","SO"); m.put("ZAF","ZA"); m.put("SSD","SS");
-        m.put("ESP","ES"); m.put("LKA","LK"); m.put("SDN","SD"); m.put("SUR","SR");
-        m.put("SWE","SE"); m.put("CHE","CH"); m.put("SYR","SY"); m.put("TWN","TW");
-        m.put("TJK","TJ"); m.put("TZA","TZ"); m.put("THA","TH"); m.put("TLS","TL");
-        m.put("TGO","TG"); m.put("TON","TO"); m.put("TTO","TT"); m.put("TUN","TN");
-        m.put("TUR","TR"); m.put("TKM","TM"); m.put("TUV","TV"); m.put("UGA","UG");
-        m.put("UKR","UA"); m.put("ARE","AE"); m.put("GBR","GB"); m.put("USA","US");
-        m.put("URY","UY"); m.put("UZB","UZ"); m.put("VUT","VU"); m.put("VEN","VE");
-        m.put("VNM","VN"); m.put("YEM","YE"); m.put("ZMB","ZM"); m.put("ZWE","ZW");
-        m.put("XKX","XK"); m.put("PSE","PS"); m.put("MAC","MO"); m.put("HKG","HK");
-        return Collections.unmodifiableMap(m);
+        return !latestCache.isEmpty();
     }
 }
