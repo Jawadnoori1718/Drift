@@ -1,5 +1,7 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { STATIC_COUNTRY_DATA, flagFromISO2 } from '../data/countries';
+import { getHistory, getForecast } from '../lib/backend';
+import HistoryChart from './HistoryChart';
 
 const METRIC_DEFS = {
   gdp: {
@@ -152,6 +154,26 @@ export default function CountryPanel({
   const heroData = yearData || allMetrics?.[selectedMetric];
   const value = heroData?.[iso2];
 
+  // ── Historical series + ML forecast for the chart ──────────────────────
+  const [history,  setHistory]  = useState(null);
+  const [forecast, setForecast] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setHistory(null);
+    setForecast(null);
+
+    getHistory(iso2, selectedMetric)
+      .then((h) => { if (!cancelled) setHistory(h); })
+      .catch(() => { if (!cancelled) setHistory(null); });
+
+    getForecast(iso2, selectedMetric)
+      .then((f) => { if (!cancelled) setForecast(f); })
+      .catch(() => { if (!cancelled) setForecast(null); });  // not enough history — fine
+
+    return () => { cancelled = true; };
+  }, [iso2, selectedMetric]);
+
   const rankInfo = useMemo(() => {
     if (!heroData || value == null) return null;
     const entries = Object.entries(heroData)
@@ -222,6 +244,36 @@ export default function CountryPanel({
         )}
       </div>
 
+      {/* Historical chart + ML forecast */}
+      {history && history.length > 1 && (
+        <>
+          <div className="cp-section">
+            HISTORY {forecast && '& 10-YEAR FORECAST'}
+          </div>
+          <div className="cp-chart-wrap">
+            <HistoryChart
+              history={history}
+              forecast={forecast}
+              colorClass={def?.colorClass}
+              formatValue={def?.format}
+            />
+            {forecast && (
+              <div className="cp-forecast-meta">
+                {forecast.model === 'log-linear' && forecast.annual_growth_pct != null
+                  ? <>trend {forecast.annual_growth_pct >= 0 ? '+' : ''}{forecast.annual_growth_pct.toFixed(1)}%/yr</>
+                  : forecast.annual_change != null
+                    ? <>trend {forecast.annual_change >= 0 ? '+' : ''}{formatTrend(forecast.annual_change)}/yr</>
+                    : null}
+                <span className="cp-fm-dot">·</span>
+                fit R² {forecast.r2?.toFixed(2)}
+                <span className="cp-fm-dot">·</span>
+                {forecast.model} model, {forecast.window_start}–{forecast.window_end}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
       {/* Quick snapshot of other metrics */}
       <div className="cp-section">OTHER INDICATORS</div>
       <div className="cp-snapshot">
@@ -262,4 +314,12 @@ export default function CountryPanel({
       </div>
     </div>
   );
+}
+
+function formatTrend(v) {
+  const a = Math.abs(v);
+  if (a >= 1000) return (v / 1000).toFixed(1) + 'k';
+  if (a >= 10)   return v.toFixed(0);
+  if (a >= 0.1)  return v.toFixed(2);
+  return v.toFixed(3);
 }

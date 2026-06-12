@@ -863,6 +863,97 @@ a { color: inherit; }
   color: var(--ink-faint);
 }
 
+/* ── History chart (country panel) ──────────────────────────────────────── */
+.cp-chart-wrap { padding: 4px 14px 10px; position: relative; }
+
+.history-chart { position: relative; }
+.hc-svg { width: 100%; display: block; overflow: visible; }
+
+.hc-grid {
+  stroke: var(--border);
+  stroke-width: 0.6;
+}
+.hc-tick-y {
+  fill: var(--ink-faint);
+  font-size: 8px;
+  text-anchor: end;
+  font-family: 'IBM Plex Mono', monospace;
+}
+.hc-tick-x {
+  fill: var(--ink-faint);
+  font-size: 8px;
+  text-anchor: middle;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.hc-line {
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.hc-forecast {
+  fill: none;
+  stroke-width: 1.4;
+  stroke-dasharray: 4 3;
+  opacity: 0.85;
+}
+.hc-band { opacity: 0.13; }
+.hc-now-line {
+  stroke: var(--ink-faint);
+  stroke-width: 0.7;
+  stroke-dasharray: 2 3;
+}
+
+/* Metric color binding for chart strokes/fills */
+.hc-svg.blue   .hc-line, .hc-svg.blue   .hc-forecast { stroke: var(--c-blue); }
+.hc-svg.orange .hc-line, .hc-svg.orange .hc-forecast { stroke: var(--c-orange); }
+.hc-svg.green  .hc-line, .hc-svg.green  .hc-forecast { stroke: var(--c-green); }
+.hc-svg.purple .hc-line, .hc-svg.purple .hc-forecast { stroke: var(--c-purple); }
+.hc-svg.brown  .hc-line, .hc-svg.brown  .hc-forecast { stroke: var(--c-brown); }
+.hc-svg.red    .hc-line, .hc-svg.red    .hc-forecast { stroke: var(--c-red); }
+.hc-svg.blue   .hc-band { fill: var(--c-blue); }
+.hc-svg.orange .hc-band { fill: var(--c-orange); }
+.hc-svg.green  .hc-band { fill: var(--c-green); }
+.hc-svg.purple .hc-band { fill: var(--c-purple); }
+.hc-svg.brown  .hc-band { fill: var(--c-brown); }
+.hc-svg.red    .hc-band { fill: var(--c-red); }
+.hc-svg .hc-hover-dot   { fill: var(--ink); stroke: var(--bg-2); stroke-width: 1.5; }
+.hc-hover-line {
+  stroke: var(--ink-soft);
+  stroke-width: 0.6;
+  stroke-dasharray: 2 2;
+}
+
+.hc-tooltip {
+  position: absolute;
+  top: -6px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  background: var(--ink);
+  color: var(--bg);
+  padding: 3px 8px;
+  border-radius: 3px;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  z-index: 5;
+}
+.hc-tt-year  { font-size: 8px; opacity: 0.7; letter-spacing: 0.06em; }
+.hc-tt-value { font-size: 11px; font-weight: 500; }
+
+.cp-forecast-meta {
+  margin-top: 8px;
+  font-size: 9px;
+  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+}
+.cp-fm-dot { margin: 0 5px; opacity: 0.5; }
+
 /* Year chip in the country panel hero */
 .cp-year-chip {
   display: inline-block;
