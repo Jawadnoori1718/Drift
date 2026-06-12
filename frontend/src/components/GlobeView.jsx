@@ -31,7 +31,7 @@ const HOVER_FILL   = '#4a90d9';
 const SELECTED_FILL = '#1a2530';
 
 /**
- * GlobeView — interactive 3D globe with choropleth + trade-flow arcs.
+ * GlobeView — interactive 3D globe with choropleth metric coloring.
  *
  * Props:
  *  size          – pixel size of the square SVG
@@ -45,8 +45,6 @@ const SELECTED_FILL = '#1a2530';
  *  dark          – theme flag
  *  metricData    – { [iso2]: number } current choropleth values
  *  colorScale    – d3 scale fn (value → css color)
- *  tradeArcs     – { src:[lon,lat], flows:[{coords:[lon,lat], value, iso2, name}] }
- *  showTradeArcs – boolean
  *  onReady       – (api) => void
  *  onUserInteract– () => void
  */
@@ -62,8 +60,6 @@ export default function GlobeView({
   dark = false,
   metricData,
   colorScale,
-  tradeArcs,
-  showTradeArcs = true,
   onReady,
   onUserInteract,
 }) {
@@ -74,16 +70,12 @@ export default function GlobeView({
   const spinSpeedRef       = useRef(spinSpeed);
   const metricDataRef      = useRef(metricData);
   const colorScaleRef      = useRef(colorScale);
-  const tradeArcsRef       = useRef(tradeArcs);
-  const showTradeArcsRef   = useRef(showTradeArcs);
   const hoveredRef         = useRef(null);
 
   useEffect(() => { spinningRef.current = spinning; },        [spinning]);
   useEffect(() => { spinSpeedRef.current = spinSpeed; },      [spinSpeed]);
   useEffect(() => { metricDataRef.current = metricData; },    [metricData]);
   useEffect(() => { colorScaleRef.current = colorScale; },    [colorScale]);
-  useEffect(() => { tradeArcsRef.current = tradeArcs; },      [tradeArcs]);
-  useEffect(() => { showTradeArcsRef.current = showTradeArcs; }, [showTradeArcs]);
 
   // D3 state bag (mutable, never triggers React renders).
   const stateRef = useRef({
@@ -103,7 +95,6 @@ export default function GlobeView({
     momentumLambda: 0,
     momentumPhi: 0,
     features: null,
-    gTradeArcs: null,
     gMarkers: null,
     R: 0,
     whirlA: 0,
@@ -145,7 +136,6 @@ export default function GlobeView({
       .attr('fill', 'url(#atmo-glow)').attr('pointer-events', 'none');
 
     const gGlobe      = svg.append('g').attr('class', 'g-globe').attr('clip-path', 'url(#sphere-clip)');
-    const gTradeArcs  = svg.append('g').attr('class', 'g-trade-arcs').attr('clip-path', 'url(#sphere-clip)');
     const gMarkers    = svg.append('g').attr('class', 'g-markers').attr('clip-path', 'url(#sphere-clip)');
 
     // Outer dashed ring
@@ -177,7 +167,7 @@ export default function GlobeView({
       .attr('fill', 'url(#sphere-light)').attr('pointer-events', 'none');
 
     Object.assign(stateRef.current, {
-      gTradeArcs, gMarkers, ringA, ringB, gComet, sphere, grat, gCountries,
+      gMarkers, ringA, ringB, gComet, sphere, grat, gCountries,
       projection, pathGen, whirlA: 0, whirlB: 0, R,
       momentumLambda: 0, momentumPhi: 0,
     });
@@ -348,9 +338,6 @@ export default function GlobeView({
           s.momentumLambda *= 0.88;
           s.momentumPhi    *= 0.88;
           drawGlobe();
-        } else {
-          // Redraw trade arcs every frame even when globe is still (projection-dependent).
-          drawTradeArcs();
         }
       } catch (err) {
         console.error('tick error', err);
@@ -384,7 +371,6 @@ export default function GlobeView({
     s.grat.attr('d', s.pathGen);
     if (s.paths) s.paths.attr('d', s.pathGen);
     applyFills();
-    drawTradeArcs();
   }
 
   function applyFills() {
@@ -402,35 +388,6 @@ export default function GlobeView({
         if (val != null && Number.isFinite(val)) return scale(val);
       }
       return DEFAULT_FILL;
-    });
-  }
-
-  function drawTradeArcs() {
-    const s = stateRef.current;
-    if (!s.gTradeArcs) return;
-    s.gTradeArcs.selectAll('.trade-arc-path').remove();
-
-    if (!showTradeArcsRef.current) return;
-    const arcs = tradeArcsRef.current;
-    if (!arcs || !arcs.src || !arcs.flows || arcs.flows.length === 0) return;
-
-    const maxVal = Math.max(...arcs.flows.map((f) => f.value));
-
-    arcs.flows.forEach((flow, i) => {
-      if (!flow.coords) return;
-      const line = { type: 'LineString', coordinates: [arcs.src, flow.coords] };
-      const pathD = s.pathGen(line);
-      if (!pathD) return;
-
-      const weight = 1.0 + (flow.value / maxVal) * 3.5;
-      const opacity = 0.55 + (flow.value / maxVal) * 0.4;
-
-      s.gTradeArcs.append('path')
-        .attr('class', 'trade-arc-path')
-        .attr('d', pathD)
-        .attr('stroke-width', weight)
-        .attr('stroke-opacity', opacity)
-        .style('animation-delay', `${i * 0.18}s`);
     });
   }
 
@@ -457,11 +414,6 @@ export default function GlobeView({
     applyFills();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metricData, colorScale]);
-
-  useEffect(() => {
-    drawTradeArcs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tradeArcs, showTradeArcs]);
 
   return (
     <svg

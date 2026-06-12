@@ -2,43 +2,55 @@
 
 > Explore 60+ years of world development data on an interactive 3D globe — and see where it's heading.
 
-Drift is a full-stack data platform that ingests historical indicators for ~200 countries from the World Bank API into a relational database, serves them through a REST API, and visualizes them on a hand-built D3 orthographic globe. On top of the raw data it layers machine learning — trend forecasting and country similarity clustering — implemented from scratch on the backend.
+Drift is a full-stack data platform. A Spring Boot backend ingests the complete historical record of 13 World Bank indicators (~92,000 observations, 1960–today, ~195 countries) into a relational database through a scheduled, idempotent ETL pipeline, layers machine learning on top — trend forecasting and k-means country similarity, both implemented from scratch — and serves it all through a REST API to a hand-built D3 orthographic globe.
 
 ## Features
 
-- 🌍 **Interactive 3D globe** — orthographic projection with drag, momentum, zoom, and choropleth coloring across 16 development metrics (GDP, life expectancy, CO₂, internet adoption, HDI, happiness, and more)
-- ⏳ **Time travel** — scrub a timeline from 1960 to today and watch the world change: economies bloom, life expectancy rise, the internet sweep the planet
-- 📈 **Country deep-dives** — historical charts for any country and metric, with world ranking and comparison against the global average
-- 🔮 **Forecasting** — least-squares trend models project each metric 10 years forward, with honest confidence bands
-- 🧭 **Country similarity** — k-means clustering over normalized indicators finds the countries most statistically similar to any selection
-- 🔬 **Correlation explorer** — plot any two metrics against each other across all countries, with a fitted regression line and r²
+- 🌍 **Interactive 3D globe** — orthographic projection with drag, momentum, zoom, and choropleth coloring across 16 development metrics (GDP, life expectancy, CO₂, internet adoption, HDI, happiness, corruption, and more)
+- ⏳ **Time travel** — scrub a timeline from 1960 to today, or press play and watch the world change: economies bloom, life expectancy rise, the internet sweep the planet
+- 📈 **Country deep-dives** — select any country for its full historical curve, world ranking, and comparison against the global average — all year-aware as you scrub
+- 🔮 **ML forecasting** — least-squares trend models project each metric 10 years forward with 95% confidence bands. Linear and log-linear models compete per series; the better fit (R² in original units) wins
+- 🧭 **Country similarity** — k-means (k-means++ seeding) over z-score-normalized indicators finds each country's nearest statistical neighbours. South Korea's? Japan, then Estonia.
+- 🔬 **Correlation explorer** — scatter any two metrics across all countries with an OLS regression line and Pearson's r. Does money buy happiness? (r ≈ 0.75)
 
 ## Architecture
 
 | Layer | Tech | Role |
 |---|---|---|
-| `frontend/` | React 18 · Vite · D3 v7 | Globe rendering, timeline, charts, panels |
-| `backend/` | Spring Boot 3.3 · Java 21 | REST API, scheduled ETL, ML (regression, k-means) |
-| database | H2 (file mode) / PostgreSQL | ~190,000 historical observations, Flyway-migrated schema |
+| `frontend/` | React 18 · Vite · D3 v7 | Globe, timeline, charts, panels |
+| `backend/` | Spring Boot 3.3 · Java 21 | REST API, scheduled ETL, ML (OLS regression, k-means) |
+| database | H2 (file mode) · Flyway | ~92,000 historical observations, migrated schema |
 
 ```
-World Bank API ──► ETL (scheduled, idempotent upserts) ──► Database
-                                                              │
-React + D3 globe ◄────────── REST API (JSON) ◄────────────────┘
-                              ├─ /api/metrics/{metric}/{year}
-                              ├─ /api/countries/{iso2}/history/{metric}
-                              ├─ /api/forecast/{iso2}/{metric}
-                              └─ /api/similar/{iso2}
+World Bank API ──► ETL (background virtual thread, idempotent
+                        MERGE upserts, retry, weekly refresh) ──► DB
+                                                                   │
+React + D3 ◄──────────────── REST API (JSON) ◄─────────────────────┘
 ```
 
-The ML layer is implemented in plain Java — ordinary least squares for forecasting and k-means for similarity — no external ML dependencies.
+The ML layer is dependency-free Java: ordinary least squares with prediction intervals, and k-means with k-means++ seeding. The bundled seed dataset makes the app fully usable offline on first boot; the ETL enriches it with full history in the background and persists it, so later startups are instant.
+
+### REST API
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/metrics` | latest value per country, all metrics |
+| `GET /api/metrics/{metric}` | latest values for one metric |
+| `GET /api/metrics/{metric}/series` | full year × country matrix (time slider) |
+| `GET /api/metrics/{metric}/{year}` | one year's slice |
+| `GET /api/countries/{iso2}/history/{metric}` | a country's full series |
+| `GET /api/forecast/{iso2}/{metric}` | 10-year projection with 95% intervals |
+| `GET /api/similar/{iso2}` | nearest statistical neighbours + cluster |
+| `GET /api/correlate/{x}/{y}` | scatter points, Pearson's r, OLS line |
+| `GET /api/meta` | metric catalogue with coverage |
+| `GET /api/metrics/status` | readiness + ETL state |
 
 ## Quick start
 
 Requirements: **Java 21**, **Maven 3.9+**, **Node 18+**.
 
 ```bash
-# Terminal 1 — backend (DB schema is created automatically; data ingests in the background)
+# Terminal 1 — backend (schema migrates automatically; data ingests in background)
 cd backend
 mvn spring-boot:run
 
@@ -48,7 +60,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173. The app is usable immediately from a bundled seed dataset; full historical data finishes ingesting from the World Bank API within a couple of minutes and persists in the database for future runs.
+Open http://localhost:5173. The app works immediately from the bundled seed dataset; the full 1960–2024 history finishes ingesting from the World Bank API within a few minutes and persists in `backend/data/` for future runs.
 
 ## Testing
 
@@ -56,7 +68,7 @@ Open http://localhost:5173. The app is usable immediately from a bundled seed da
 cd backend && mvn test
 ```
 
-Covers the ETL parsing, the forecasting and clustering math, and the REST layer (MockMvc).
+29 tests cover the ETL parsing and upsert idempotency, the regression and clustering math (including that prediction intervals widen with distance and that the US's nearest neighbour is a wealthy country), and the REST layer via MockMvc.
 
 ## Data sources
 
