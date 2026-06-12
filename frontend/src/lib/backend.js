@@ -8,5 +8,8 @@ async function get(path) {
 
 export const getAllMetrics   = () => get('/metrics');
 export const getMetricStatus = () => get('/metrics/status');
-export const getMetric      = (key) => get(`/metrics/${key}`);
-export const getTradeFlows  = (iso2) => get(`/trade/${iso2}`);
+export const getMetric       = (key) => get(`/metrics/${key}`);
+export const getSeries       = (key) => get(`/metrics/${key}/series`);
+export const getMeta         = () => get('/meta');
+export const getHistory      = (iso2, key) => get(`/countries/${iso2}/history/${key}`);
+export const getTradeFlows   = (iso2) => get(`/trade/${iso2}`);

@@ -4,11 +4,12 @@ import * as d3 from 'd3';
 import GlobeView from './components/GlobeView';
 import LayerPanel from './components/LayerPanel';
 import CountryPanel from './components/CountryPanel';
+import TimeSlider from './components/TimeSlider';
 import ErrorBoundary from './components/ErrorBoundary';
 
 import { STATIC_COUNTRY_DATA, flagFromISO2 } from './data/countries';
 import { usePersistentState, useDebounced } from './lib/utils';
-import { getAllMetrics, getMetricStatus, getTradeFlows } from './lib/backend';
+import { getAllMetrics, getMetricStatus, getSeries, getTradeFlows } from './lib/backend';
 
 // ── Metric configuration ─────────────────────────────────────────────────────
 const METRIC_CONFIG = {
@@ -90,6 +91,13 @@ export default function App() {
   const [metricsLoading,setMetricsLoading]= useState(true);
   const [tradeLoading,  setTradeLoading]  = useState(false);
 
+  // ── Time dimension ──────────────────────────────────────────────────────
+  const [series,    setSeries]    = useState(null);  // {year: {iso2: value}} for selectedMetric
+  const [year,      setYear]      = useState(null);  // null = latest
+  const [playing,   setPlaying]   = useState(false);
+  const [dataEpoch, setDataEpoch] = useState(0);     // bumped when the backend ETL finishes
+  const seriesCacheRef = useRef({});
+
   // ── Computed trade arcs ─────────────────────────────────────────────────
   const [tradeArcs, setTradeArcs] = useState(null);  // { src, flows }
 
@@ -128,6 +136,28 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     let attempt   = 0;
+    let statusTimer = null;
+
+    // After the first load, keep watching until the backend's ETL finishes,
+    // then refresh everything once so full history replaces the seed data.
+    const watchEtl = () => {
+      let checks = 0;
+      statusTimer = setInterval(() => {
+        if (cancelled || ++checks > 40) { clearInterval(statusTimer); return; }
+        getMetricStatus()
+          .then((s) => {
+            if (cancelled || s.etl_running) return;
+            clearInterval(statusTimer);
+            getAllMetrics().then((data) => {
+              if (cancelled) return;
+              setAllMetrics(data);
+              seriesCacheRef.current = {};
+              setDataEpoch((e) => e + 1);
+            }).catch(() => {});
+          })
+          .catch(() => {});
+      }, 15000);
+    };
 
     const poll = () => {
       if (cancelled) return;
@@ -138,8 +168,8 @@ export default function App() {
           if (ready) {
             setAllMetrics(data);
             setMetricsLoading(false);
+            watchEtl();
           } else {
-            // Backend started but World Bank fetch not done yet — retry
             attempt++;
             const delay = Math.min(3000 + attempt * 1000, 10000);
             setTimeout(poll, delay);
@@ -154,16 +184,64 @@ export default function App() {
     };
 
     poll();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; if (statusTimer) clearInterval(statusTimer); };
   }, []);
 
+  // ── Fetch the full historical series for the selected metric ───────────
+  useEffect(() => {
+    let cancelled = false;
+    setPlaying(false);
+
+    const cached = seriesCacheRef.current[selectedMetric];
+    if (cached) { setSeries(cached); return; }
+
+    setSeries(null);
+    getSeries(selectedMetric)
+      .then((data) => {
+        if (cancelled) return;
+        seriesCacheRef.current[selectedMetric] = data;
+        setSeries(data);
+      })
+      .catch(() => { if (!cancelled) setSeries(null); });
+
+    return () => { cancelled = true; };
+  }, [selectedMetric, dataEpoch]);
+
+  // ── Timeline: year range + carry-forward snapshots per year ────────────
+  // Sparse indicators (e.g. Gini) don't report every country every year, so
+  // each year's view carries the last known value forward.
+  const timeline = useMemo(() => {
+    if (!series) return null;
+    const years = Object.keys(series).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+    if (!years.length) return null;
+    const minYear = years[0], maxYear = years[years.length - 1];
+
+    const carried = {};
+    let running = {};
+    for (let y = minYear; y <= maxYear; y++) {
+      if (series[y]) running = { ...running, ...series[y] };
+      carried[y] = running;
+    }
+    return { minYear, maxYear, carried };
+  }, [series]);
+
+  const displayYear = timeline
+    ? Math.min(Math.max(year ?? timeline.maxYear, timeline.minYear), timeline.maxYear)
+    : null;
+  const isLatestYear = !timeline || displayYear === timeline.maxYear;
+
   // ── Color scale for current metric ───────────────────────────────────
+  // Quantiles span ALL years so colors stay comparable while scrubbing time.
   const colorScale = useMemo(() => {
-    const data = allMetrics[selectedMetric];
-    if (!data) return null;
-    const vals = Object.values(data).filter(Number.isFinite);
+    let vals = null;
+    if (series) {
+      vals = Object.values(series).flatMap((m) => Object.values(m)).filter(Number.isFinite);
+    } else if (allMetrics[selectedMetric]) {
+      vals = Object.values(allMetrics[selectedMetric]).filter(Number.isFinite);
+    }
+    if (!vals || !vals.length) return null;
     return buildColorScale(selectedMetric, vals);
-  }, [allMetrics, selectedMetric]);
+  }, [series, allMetrics, selectedMetric]);
 
   // ── Country search ────────────────────────────────────────────────────
   const allCountries = useMemo(
@@ -292,7 +370,10 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [selected, searchOpen, handleClear, setDark]);
 
-  const currentMetricData = allMetrics[selectedMetric] || null;
+  // Year-aware data slice for the globe (carry-forward), latest as fallback
+  const currentMetricData = timeline
+    ? timeline.carried[displayYear]
+    : (allMetrics[selectedMetric] || null);
 
   return (
     <div className={`app ${dark ? 'dark' : ''}`}>
@@ -397,6 +478,17 @@ export default function App() {
               onReady={handleGlobeReady}
             />
           </div>
+
+          {timeline && timeline.maxYear > timeline.minYear && (
+            <TimeSlider
+              minYear={timeline.minYear}
+              maxYear={timeline.maxYear}
+              year={displayYear}
+              onYearChange={setYear}
+              playing={playing}
+              onPlayingChange={setPlaying}
+            />
+          )}
         </main>
 
         {/* ── Country detail panel ────────────────────────────────────── */}
@@ -406,6 +498,9 @@ export default function App() {
               feature={selected}
               allMetrics={allMetrics}
               selectedMetric={selectedMetric}
+              yearData={currentMetricData}
+              year={displayYear}
+              isLatestYear={isLatestYear}
               onClose={handleClear}
             />
           </ErrorBoundary>

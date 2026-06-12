@@ -136,6 +136,9 @@ export default function CountryPanel({
   feature,
   allMetrics,
   selectedMetric,
+  yearData,
+  year,
+  isLatestYear,
   onClose,
 }) {
   const meta = STATIC_COUNTRY_DATA[feature?.id];
@@ -145,19 +148,20 @@ export default function CountryPanel({
   const flag = flagFromISO2(iso2);
   const def  = METRIC_DEFS[selectedMetric];
 
-  const value = allMetrics?.[selectedMetric]?.[iso2];
+  // Value for the scrubbed year (falls back to latest)
+  const heroData = yearData || allMetrics?.[selectedMetric];
+  const value = heroData?.[iso2];
 
   const rankInfo = useMemo(() => {
-    const data = allMetrics?.[selectedMetric];
-    if (!data || value == null) return null;
-    const entries = Object.entries(data)
+    if (!heroData || value == null) return null;
+    const entries = Object.entries(heroData)
       .filter(([, v]) => Number.isFinite(v))
       .sort(([, a], [, b]) => b - a);
     const rank = entries.findIndex(([k]) => k === iso2) + 1;
     const total = entries.length;
     const worldAvg = entries.reduce((s, [, v]) => s + v, 0) / total;
     return { rank, total, worldAvg };
-  }, [allMetrics, selectedMetric, iso2, value]);
+  }, [heroData, iso2, value]);
 
   const vsAvg = rankInfo && value != null
     ? ((value - rankInfo.worldAvg) / rankInfo.worldAvg * 100)
@@ -183,7 +187,14 @@ export default function CountryPanel({
 
       {/* Metric hero */}
       <div className="cp-hero">
-        <div className="cp-hero-label">{def?.label ?? selectedMetric}</div>
+        <div className="cp-hero-label">
+          {def?.label ?? selectedMetric}
+          {year != null && (
+            <span className={`cp-year-chip ${isLatestYear ? 'latest' : ''}`}>
+              {isLatestYear ? 'Latest' : year}
+            </span>
+          )}
+        </div>
         <div className={`cp-hero-value ${def?.colorClass || ''}`}>
           {hasValue ? def?.format(value) : '—'}
         </div>
