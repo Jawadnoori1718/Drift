@@ -23,7 +23,7 @@ spring:
       path: /h2-console
 
 server:
-  port: 8080
+  port: ${PORT:8080}
   error:
     include-message: never
     include-binding-errors: never
@@ -31,3 +31,5 @@ server:
 drift:
   etl:
     on-startup: true
+  # comma-separated allowed origins (set DRIFT_CORS_ORIGINS to your frontend URL in prod)
+  cors-origins: ${DRIFT_CORS_ORIGINS:*}
