@@ -71,7 +71,7 @@ export default function LayerPanel({
           return (
             <NavItem key={c.key} icon={<Ic />} title={c.label} sub={c.sub}
               active={categoryFilter === c.key}
-              onClick={() => onCategoryChange(categoryFilter === c.key ? null : c.key)} />
+              onClick={() => onCategoryChange(c.key)} />
           );
         })}
 
@@ -99,9 +99,6 @@ export default function LayerPanel({
           </>
         )}
 
-        {!categoryFilter && (
-          <div className="sb-hint">Select a category above to browse its indicators.</div>
-        )}
       </div>
 
       <div className="sb-footer">

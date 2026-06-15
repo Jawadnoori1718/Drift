@@ -16,7 +16,7 @@ export default function TimeSlider({
         if (y >= maxYear) { onPlayingChange(false); return y; }
         return y + 1;
       });
-    }, 180);
+    }, 340);
     return () => clearInterval(intervalRef.current);
   }, [playing, maxYear, onYearChange, onPlayingChange]);
 

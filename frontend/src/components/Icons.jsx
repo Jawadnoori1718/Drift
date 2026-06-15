@@ -164,6 +164,67 @@ export const IconCalendar = (p) => (
   </svg>
 );
 
+// ── Per-indicator icons (minimal, currentColor) ───────────────────────────
+export const IconScale = (p) => (
+  <svg {...base} {...p}>
+    <path d="M12 4v16M6 20h12M5 8h14" />
+    <path d="M5 8l-2.4 5a2.4 2.4 0 0 0 4.8 0zM19 8l-2.4 5a2.4 2.4 0 0 0 4.8 0z" />
+  </svg>
+);
+export const IconTrendDown = (p) => (
+  <svg {...base} {...p}><path d="M4 7l6 6 3-3 7 7" /><path d="M21 11v6h-6" /></svg>
+);
+export const IconShield = (p) => (
+  <svg {...base} {...p}><path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z" /></svg>
+);
+export const IconHeart = (p) => (
+  <svg {...base} {...p}><path d="M12 20s-7-4.4-7-9.6A3.9 3.9 0 0 1 12 7a3.9 3.9 0 0 1 7 3.4C19 15.6 12 20 12 20z" /></svg>
+);
+export const IconPulse = (p) => (
+  <svg {...base} {...p}><path d="M3 12h4l2.2-5.5L13 17l2.2-5H21" /></svg>
+);
+export const IconCross = (p) => (
+  <svg {...base} {...p}><rect x="4" y="4" width="16" height="16" rx="4.5" /><path d="M12 8.5v7M8.5 12h7" /></svg>
+);
+export const IconBuildings = (p) => (
+  <svg {...base} {...p}>
+    <rect x="3.5" y="8.5" width="7" height="11.5" rx="1" />
+    <rect x="12.5" y="4" width="8" height="16" rx="1" />
+    <path d="M6 12h2M6 15.5h2M15 8h3M15 11.5h3M15 15h3" />
+  </svg>
+);
+export const IconSmile = (p) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M8.5 14a4.2 4.2 0 0 0 7 0" />
+    <circle cx="9" cy="10" r="0.7" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="10" r="0.7" fill="currentColor" stroke="none" />
+  </svg>
+);
+export const IconCloud = (p) => (
+  <svg {...base} {...p}><path d="M7.5 18a4 4 0 0 1 0-8 5 5 0 0 1 9.5-1.4A3.6 3.6 0 0 1 17 18z" /></svg>
+);
+export const IconTree = (p) => (
+  <svg {...base} {...p}><path d="M12 3l5.5 7.5H14L18 17H6l4-6.5H6.5z" /><path d="M12 17v4" /></svg>
+);
+export const IconBolt = (p) => (
+  <svg {...base} {...p}><path d="M13 3L5 13.5h5.5L9.5 21 19 10.5h-5.5z" /></svg>
+);
+export const IconUsers = (p) => (
+  <svg {...base} {...p}>
+    <circle cx="9" cy="8.5" r="3" />
+    <path d="M3.5 19a5.5 5.5 0 0 1 11 0" />
+    <path d="M16 6.2a3 3 0 0 1 0 5.6" /><path d="M17.5 14a5.5 5.5 0 0 1 3 4.4" />
+  </svg>
+);
+export const IconBank = (p) => (
+  <svg {...base} {...p}>
+    <path d="M3.5 9.5L12 4l8.5 5.5" />
+    <path d="M5.5 10v7M9.5 10v7M14.5 10v7M18.5 10v7" />
+    <path d="M3.5 20.5h17M4.5 17.5h15" />
+  </svg>
+);
+
 export const IconSpark = (p) => (
   <svg {...base} fill="currentColor" stroke="none" {...p}>
     <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />

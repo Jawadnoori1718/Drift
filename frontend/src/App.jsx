@@ -54,7 +54,13 @@ function buildColorScale(metricKey, values, dark) {
 export default function App() {
   const [dark,           setDark]           = usePersistentState('drift:dark', false);
   const [selectedMetric, setSelectedMetric] = usePersistentState('drift:metric', 'gdp');
-  const [categoryFilter, setCategoryFilter] = useState(null);
+  const [categoryFilter, setCategoryFilter] = useState(() => METRICS[selectedMetric]?.cat || 'economy');
+
+  // Picking an indicator anywhere also moves the sidebar to its category.
+  const chooseMetric = useCallback((key) => {
+    setSelectedMetric(key);
+    if (METRICS[key]) setCategoryFilter(METRICS[key].cat);
+  }, [setSelectedMetric]);
   const [view,           setView]           = useState('map');   // map | analytics | rankings
   const [navOpen,        setNavOpen]        = useState(false);
 
@@ -265,7 +271,7 @@ export default function App() {
 
       <LayerPanel
         selectedMetric={selectedMetric}
-        onMetricChange={(k) => { setSelectedMetric(k); setNavOpen(false); }}
+        onMetricChange={(k) => { chooseMetric(k); setNavOpen(false); }}
         view={view}
         onViewChange={(v) => { setView(v); setNavOpen(false); }}
         categoryFilter={categoryFilter}
@@ -337,7 +343,7 @@ export default function App() {
                   <span className="ctrl-sub">{m.unit}</span>
                 </div>
                 <select className="ctrl-overlay-select" value={selectedMetric}
-                  onChange={(e) => setSelectedMetric(e.target.value)} aria-label="Active indicator">
+                  onChange={(e) => chooseMetric(e.target.value)} aria-label="Active indicator">
                   {Object.entries(METRICS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                 </select>
               </label>
@@ -441,7 +447,7 @@ export default function App() {
                 year={displayYear}
                 isLatestYear={isLatestYear}
                 onSelectIso2={selectByIso2}
-                onMetricChange={setSelectedMetric}
+                onMetricChange={chooseMetric}
                 onClose={handleClear}
               />
             </ErrorBoundary>
