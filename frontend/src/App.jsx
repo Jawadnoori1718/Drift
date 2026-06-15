@@ -53,14 +53,15 @@ function buildColorScale(metricKey, values, dark) {
 
 export default function App() {
   const [dark,           setDark]           = usePersistentState('drift:dark', false);
-  const [selectedMetric, setSelectedMetric] = usePersistentState('drift:metric', 'gdp');
-  const [categoryFilter, setCategoryFilter] = useState(() => METRICS[selectedMetric]?.cat || 'economy');
+  // Start blank — nothing selected until the user picks a category + indicator.
+  const [selectedMetric, setSelectedMetric] = useState(null);
+  const [categoryFilter, setCategoryFilter] = useState(null);
 
   // Picking an indicator anywhere also moves the sidebar to its category.
   const chooseMetric = useCallback((key) => {
     setSelectedMetric(key);
     if (METRICS[key]) setCategoryFilter(METRICS[key].cat);
-  }, [setSelectedMetric]);
+  }, []);
   const [view,           setView]           = useState('map');   // map | analytics | rankings
   const [navOpen,        setNavOpen]        = useState(false);
 
@@ -138,6 +139,7 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     setPlaying(false);
+    if (!selectedMetric) { setSeries(null); return; }
     const cached = seriesCacheRef.current[selectedMetric];
     if (cached) { setSeries(cached); return; }
     setSeries(null);
@@ -266,7 +268,7 @@ export default function App() {
   }, [allMetrics]);
 
   return (
-    <div className={`app ${dark ? 'dark' : ''} ${navOpen ? 'nav-open' : ''}`}>
+    <div className={`app ${dark ? 'dark' : ''} ${navOpen ? 'nav-open' : ''} ${selectedMetric ? '' : 'globe-empty'}`}>
       <div className="scrim" onClick={() => setNavOpen(false)} />
 
       <LayerPanel
@@ -337,13 +339,14 @@ export default function App() {
                 <div className="ctrl-body">
                   <span className="ctrl-label">Active Indicator</span>
                   <div className="ctrl-select-row">
-                    <span className="ctrl-value">{m.label}</span>
+                    <span className={`ctrl-value ${m ? '' : 'placeholder'}`}>{m ? m.label : 'Select an indicator'}</span>
                     <span className="ctrl-chev"><IconChevron /></span>
                   </div>
-                  <span className="ctrl-sub">{m.unit}</span>
+                  <span className="ctrl-sub">{m ? m.unit : 'none selected yet'}</span>
                 </div>
-                <select className="ctrl-overlay-select" value={selectedMetric}
+                <select className="ctrl-overlay-select" value={selectedMetric ?? ''}
                   onChange={(e) => chooseMetric(e.target.value)} aria-label="Active indicator">
+                  <option value="" disabled>Select an indicator…</option>
                   {Object.entries(METRICS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                 </select>
               </label>

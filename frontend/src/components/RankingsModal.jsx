@@ -26,8 +26,8 @@ export default function RankingsModal({ metric, allMetrics, onClose, onPick }) {
   const span = max - min || 1;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay">
+      <div className="modal">
         <button className="modal-close" onClick={onClose}><IconClose /></button>
         <div className="modal-title">Country Rankings</div>
         <div className="modal-sub">Every country ranked by the selected indicator</div>

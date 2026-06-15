@@ -4,7 +4,7 @@ import { METRICS, METRIC_ORDER } from '../data/metrics';
 import { getHistory, getForecast } from '../lib/backend';
 import HistoryChart from './HistoryChart';
 import {
-  IconStar, IconClose, IconEconomy, IconScale, IconTrendDown, IconShield,
+  IconClose, IconEconomy, IconScale, IconTrendDown, IconShield,
   IconHeart, IconPulse, IconCross, IconBuildings, IconSmile, IconStar as IconStarMetric,
   IconCloud, IconTree, IconConnectivity, IconBolt, IconUsers, IconBank,
 } from './Icons';
@@ -26,10 +26,9 @@ export default function CountryPanel({
 
   const [history,  setHistory]  = useState(null);
   const [forecast, setForecast] = useState(null);
-  const [starred,  setStarred]  = useState(false);
 
   useEffect(() => {
-    if (!iso2) return;
+    if (!iso2 || !selectedMetric) { setHistory(null); setForecast(null); return; }
     let cancelled = false;
     setHistory(null); setForecast(null);
     getHistory(iso2, selectedMetric).then((h) => !cancelled && setHistory(h)).catch(() => !cancelled && setHistory(null));
@@ -37,13 +36,13 @@ export default function CountryPanel({
     return () => { cancelled = true; };
   }, [iso2, selectedMetric]);
 
-  const def = METRICS[selectedMetric];
+  const def = selectedMetric ? METRICS[selectedMetric] : null;
   const heroData = yearData || allMetrics?.[selectedMetric];
   const value = heroData?.[iso2];
   const hasValue = value != null && Number.isFinite(value);
 
   const rankInfo = useMemo(() => {
-    if (!heroData || value == null) return null;
+    if (!def || !heroData || value == null) return null;
     const entries = Object.entries(heroData).filter(([, v]) => Number.isFinite(v)).sort(([, a], [, b]) => b - a);
     const rank = entries.findIndex(([k]) => k === iso2) + 1;
     const total = entries.length;
@@ -65,39 +64,38 @@ export default function CountryPanel({
             <div className="cp-name">{name}</div>
             <div className="cp-sub">{iso2}{capital ? ` · ${capital}` : ''}</div>
           </div>
-          <button className={`cp-star ${starred ? 'on' : ''}`} onClick={() => setStarred((s) => !s)} title="Favourite">
-            <IconStar filled={starred} />
-          </button>
           <button className="cp-close-x" onClick={onClose} aria-label="Close"><IconClose /></button>
         </div>
       </div>
 
-      {/* hero metric */}
-      <div className="cp-card">
-        <div className="cp-hero-top">
-          <span className="cp-hero-label">
-            {def.label}
-            {year != null && <span className={`cp-year-chip ${isLatestYear ? 'latest' : ''}`}>{isLatestYear ? 'Latest' : year}</span>}
-          </span>
-          {rankInfo && hasValue && (
-            <span className="cp-rank">
-              <div className="cp-rank-label">Rank</div>
-              <div className="cp-rank-val">{rankInfo.rank}</div>
+      {/* hero metric (only when an indicator is selected) */}
+      {def && (
+        <div className="cp-card">
+          <div className="cp-hero-top">
+            <span className="cp-hero-label">
+              {def.label}
+              {year != null && <span className={`cp-year-chip ${isLatestYear ? 'latest' : ''}`}>{isLatestYear ? 'Latest' : year}</span>}
             </span>
-          )}
+            {rankInfo && hasValue && (
+              <span className="cp-rank">
+                <div className="cp-rank-label">Rank</div>
+                <div className="cp-rank-val">{rankInfo.rank}</div>
+              </span>
+            )}
+          </div>
+          <div className="cp-hero-value" style={{ '--hue': def.hue }}>
+            {hasValue ? def.fmt(value) : '—'}
+          </div>
+          <div className="cp-hero-foot">
+            <span className="cp-hero-unit">{def.unit}</span>
+            {vsAvg != null && (
+              <span className={`cp-delta ${vsAvg >= 1 ? 'up' : 'down'}`}>
+                {vsAvg >= 1 ? '▲' : '▼'} {vsAvg.toFixed(2)}× vs World Avg
+              </span>
+            )}
+          </div>
         </div>
-        <div className="cp-hero-value" style={{ '--hue': def.hue }}>
-          {hasValue ? def.fmt(value) : '—'}
-        </div>
-        <div className="cp-hero-foot">
-          <span className="cp-hero-unit">{def.unit}</span>
-          {vsAvg != null && (
-            <span className={`cp-delta ${vsAvg >= 1 ? 'up' : 'down'}`}>
-              {vsAvg >= 1 ? '▲' : '▼'} {vsAvg.toFixed(2)}× vs World Avg
-            </span>
-          )}
-        </div>
-      </div>
+      )}
 
       {/* history & forecast */}
       {history && history.length > 1 && (
@@ -107,7 +105,6 @@ export default function CountryPanel({
               <h4>History & Forecast</h4>
               <span className="sub">{def.unit}</span>
             </div>
-            {forecast && <span className="cp-info-i" title={`${forecast.model} model · R² ${forecast.r2?.toFixed(2)}`}>i</span>}
           </div>
           <HistoryChart history={history} forecast={forecast} hue={def.hue} formatValue={def.fmt} />
           {forecast && (

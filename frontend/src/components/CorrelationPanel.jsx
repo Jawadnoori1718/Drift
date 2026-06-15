@@ -82,8 +82,8 @@ export default function CorrelationPanel({ onClose }) {
   const insight = pinned && chart ? modelInsight(pinned, fmtY) : null;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal corr-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay">
+      <div className="modal corr-modal">
         <button className="modal-close" onClick={onClose} aria-label="Close"><IconClose /></button>
 
         <div className="modal-title">Compare</div>

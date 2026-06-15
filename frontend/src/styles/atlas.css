@@ -376,6 +376,7 @@ select { font-family: inherit; }
   font-size: 16px; font-weight: 700; color: var(--ink); letter-spacing: -0.01em;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.ctrl-value.placeholder { color: var(--ink-3); font-weight: 600; }
 .ctrl-chev { color: var(--ink-3); display: flex; flex-shrink: 0; }
 .ctrl-card:hover .ctrl-chev { color: var(--accent); }
 .ctrl-sub { font-size: 11px; color: var(--ink-3); }
@@ -855,12 +856,20 @@ body.dark .corr-pin-badge.down { background: rgba(240,80,110,0.16); }
 /* ═══ GLOBE SVG ═════════════════════════════════════════════════════════════*/
 .globe-svg { cursor: grab; display: block; }
 .globe-svg.dragging { cursor: grabbing; }
+/* default ocean (once an indicator is picked) — original calm lavender */
 .globe-svg .sphere { fill: #eceafb; stroke: #d6d0f3; stroke-width: 1; }
-.app.dark .globe-svg .sphere {
-  fill: #130f2c;
-  stroke: rgba(150,120,255,0.55);
-  stroke-width: 1.4;
-}
+.app.dark .globe-svg .sphere { fill: #130f2c; stroke: rgba(150,120,255,0.55); stroke-width: 1.4; }
+/* empty startup globe — rich depth-shaded blue ocean */
+.app.globe-empty .globe-svg .sphere { fill: url(#ocean-grad); stroke: #9fb8e8; }
+.app.globe-empty.dark .globe-svg .sphere { stroke: rgba(150,120,255,0.55); }
+/* ocean gradient stops — light: oceanic periwinkle-blue with depth */
+.ocean-1 { stop-color: #d4e3fb; }
+.ocean-2 { stop-color: #a8c5f1; }
+.ocean-3 { stop-color: #7ba0e4; }
+/* dark: deep blue-violet sea that glows with the rim */
+body.dark .ocean-1 { stop-color: #221c4a; }
+body.dark .ocean-2 { stop-color: #171234; }
+body.dark .ocean-3 { stop-color: #0c0922; }
 .globe-svg .graticule { fill: none; stroke: rgba(109,93,252,0.10); stroke-width: 0.5; }
 .app.dark .globe-svg .graticule { stroke: rgba(150,120,255,0.16); }
 .globe-svg.no-graticule .graticule { display: none; }

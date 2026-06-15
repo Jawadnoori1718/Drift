@@ -26,8 +26,8 @@ Object.entries(STATIC_COUNTRY_DATA).forEach(([num, v]) => {
 });
 
 const SPIN_SPEEDS = { slow: 8, normal: 22, fast: 45 };
-const DEFAULT_FILL      = '#e3e2f0';   // no-data country (light theme)
-const DEFAULT_FILL_DARK = '#272448';   // no-data country (dark theme)
+const DEFAULT_FILL      = '#eef2fc';   // no-data land (light theme) — soft land on blue ocean
+const DEFAULT_FILL_DARK = '#3a3568';   // no-data land (dark theme)
 const HOVER_FILL        = '#8b7bff';   // accent violet
 const SELECTED_FILL     = '#5a48e8';
 
@@ -130,6 +130,13 @@ export default function GlobeView({
     atmoGlow.append('stop').attr('offset', '74%').attr('stop-color', 'rgba(124,58,237,0)');
     atmoGlow.append('stop').attr('offset', '92%').attr('stop-color', 'rgba(124,58,237,0.20)');
     atmoGlow.append('stop').attr('offset', '100%').attr('stop-color', 'rgba(139,92,246,0.40)');
+
+    // Ocean: depth-shaded radial gradient (colors come from CSS so they follow the theme)
+    const ocean = defs.append('radialGradient')
+      .attr('id', 'ocean-grad').attr('cx', '38%').attr('cy', '32%').attr('r', '78%');
+    ocean.append('stop').attr('offset', '0%').attr('class', 'ocean-1');
+    ocean.append('stop').attr('offset', '58%').attr('class', 'ocean-2');
+    ocean.append('stop').attr('offset', '100%').attr('class', 'ocean-3');
 
     // ── Groups (z-order matters) ─────────────────────────────────────────
     const gOuter = svg.append('g').attr('class', 'g-outer');
