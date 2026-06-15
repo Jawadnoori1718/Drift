@@ -1,153 +1,125 @@
-import * as d3 from 'd3';
+import { METRICS, CATEGORIES, METRIC_ORDER } from '../data/metrics';
+import {
+  IconGlobe, IconAnalytics, IconRankings, IconEconomy, IconSociety,
+  IconEnvironment, IconConnectivity, IconChevron,
+} from './Icons';
 
-const CATEGORIES = [
-  {
-    label: 'ECONOMY',
-    metrics: [
-      { key: 'gdp',          label: 'GDP per Capita',      unit: 'USD/capita' },
-      { key: 'gini',         label: 'Inequality (Gini)',   unit: 'index 0–100' },
-      { key: 'unemployment', label: 'Unemployment',        unit: '% labour force' },
-      { key: 'military_exp', label: 'Military Spending',   unit: '% of GDP' },
-    ],
-  },
-  {
-    label: 'SOCIETY',
-    metrics: [
-      { key: 'life_expectancy',  label: 'Life Expectancy',    unit: 'years' },
-      { key: 'infant_mortality', label: 'Infant Mortality',   unit: 'per 1,000 births' },
-      { key: 'health_exp',       label: 'Health Spending',    unit: '% of GDP' },
-      { key: 'urban_pop',        label: 'Urbanisation',       unit: '% urban' },
-      { key: 'happiness',        label: 'Happiness Score',    unit: 'score 0–10' },
-      { key: 'hdi',              label: 'Human Dev. Index',   unit: 'score 0–1' },
-    ],
-  },
-  {
-    label: 'ENVIRONMENT',
-    metrics: [
-      { key: 'co2',          label: 'CO₂ Emissions',      unit: 't per capita' },
-      { key: 'forest_cover', label: 'Forest Cover',       unit: '% land area' },
-    ],
-  },
-  {
-    label: 'CONNECTIVITY',
-    metrics: [
-      { key: 'internet',           label: 'Internet Users',    unit: '% population' },
-      { key: 'electricity_access', label: 'Electricity Access',unit: '% population' },
-      { key: 'pop_density',        label: 'Pop. Density',      unit: 'per km²' },
-      { key: 'cpi',                label: 'Anti-Corruption',   unit: 'CPI score 0–100' },
-    ],
-  },
-];
+const CAT_ICON = {
+  economy: IconEconomy, society: IconSociety,
+  environment: IconEnvironment, connectivity: IconConnectivity,
+};
+
+// Gradient brand mark (no background tile)
+function BrandMark() {
+  return (
+    <svg width="40" height="40" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="bm" x1="6" y1="10" x2="56" y2="54" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#3b82f6" />
+          <stop offset="1" stopColor="#7c3aed" />
+        </linearGradient>
+      </defs>
+      <g stroke="url(#bm)" strokeWidth="4.6" strokeLinecap="round">
+        <line x1="7" y1="23" x2="23" y2="23" />
+        <line x1="3" y1="32" x2="19" y2="32" opacity="0.6" />
+        <line x1="8" y1="41" x2="21" y2="41" opacity="0.42" />
+      </g>
+      <path d="M31 13 H34 a19 19 0 0 1 0 38 H31" fill="none" stroke="url(#bm)" strokeWidth="7" strokeLinecap="round" />
+      <g stroke="url(#bm)" strokeWidth="2.4" fill="none">
+        <circle cx="31.5" cy="32" r="11.5" />
+        <ellipse cx="31.5" cy="32" rx="5" ry="11.5" />
+        <line x1="20" y1="32" x2="43" y2="32" />
+      </g>
+    </svg>
+  );
+}
 
 export default function LayerPanel({
-  selectedMetric,
-  onMetricChange,
-  colorScale,
-  metricData,
-  dark,
-  onDarkChange,
-  loading,
+  selectedMetric, onMetricChange,
+  view, onViewChange,
+  categoryFilter, onCategoryChange,
 }) {
-  const currentData = metricData?.[selectedMetric] || {};
-  const values      = Object.values(currentData).filter(Number.isFinite);
-  const minVal      = values.length ? d3.min(values) : 0;
-  const maxVal      = values.length ? d3.max(values) : 1;
-
-  const swatches = colorScale
-    ? Array.from({ length: 9 }, (_, i) => {
-        const t = i / 8;
-        const v = minVal + t * (maxVal - minVal);
-        return { color: colorScale(v), label: formatVal(v, selectedMetric) };
-      })
+  // Indicators are only shown once a category is selected.
+  const indicators = categoryFilter
+    ? METRIC_ORDER.filter((k) => METRICS[k].cat === categoryFilter)
     : [];
 
   return (
-    <aside className="layer-panel">
-      <div className="lp-brand">
-        <svg className="lp-brand-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <circle cx="12" cy="12" r="9.5" stroke="currentColor" strokeWidth="1.4" />
-          <ellipse cx="12" cy="12" rx="4.5" ry="9.5" stroke="currentColor" strokeWidth="1.2" />
-          <line x1="2.5" y1="12" x2="21.5" y2="12" stroke="currentColor" strokeWidth="1.2" />
-        </svg>
-        <span className="lp-brand-name">Drift</span>
+    <aside className="sidebar">
+      <div className="sb-brand">
+        <div className="sb-logo"><BrandMark /></div>
+        <div className="sb-brand-text">
+          <span className="sb-brand-name">Drift</span>
+          <span className="sb-brand-sub">Global Data · Intelligent Insights</span>
+        </div>
       </div>
 
-      {loading && <div className="lp-loading-bar" />}
+      <div className="sb-scroll">
+        {/* OVERVIEW */}
+        <div className="sb-section-label">OVERVIEW</div>
+        <NavItem icon={<IconGlobe />} title="World Map" sub="Explore Global Data"
+          active={view === 'map'} onClick={() => onViewChange('map')} />
+        <NavItem icon={<IconAnalytics />} title="Analytics" sub="Correlations & Trends"
+          active={view === 'analytics'} onClick={() => onViewChange('analytics')} />
+        <NavItem icon={<IconRankings />} title="Rankings" sub="Compare Countries"
+          active={view === 'rankings'} onClick={() => onViewChange('rankings')} />
 
-      {CATEGORIES.map((cat) => (
-        <div key={cat.label} className="lp-category">
-          <div className="lp-section">{cat.label}</div>
-          {cat.metrics.map((m) => (
-            <button
-              key={m.key}
-              className={`lp-metric-btn ${selectedMetric === m.key ? 'active' : ''}`}
-              onClick={() => onMetricChange(m.key)}
-            >
-              <span className="lp-metric-dot" />
-              <div className="lp-metric-text">
-                <span className="lp-metric-label">{m.label}</span>
-                <span className="lp-metric-unit">{m.unit}</span>
-              </div>
-            </button>
-          ))}
-        </div>
-      ))}
+        {/* CATEGORIES */}
+        <div className="sb-section-label">CATEGORIES</div>
+        {CATEGORIES.map((c) => {
+          const Ic = CAT_ICON[c.key];
+          return (
+            <NavItem key={c.key} icon={<Ic />} title={c.label} sub={c.sub}
+              active={categoryFilter === c.key}
+              onClick={() => onCategoryChange(categoryFilter === c.key ? null : c.key)} />
+          );
+        })}
 
-      {swatches.length > 0 && (
-        <div className="lp-category">
-          <div className="lp-section">COLOR SCALE</div>
-          <div className="lp-legend">
-            <div
-              className="lp-gradient"
-              style={{
-                background: `linear-gradient(to right, ${swatches.map((s) => s.color).join(', ')})`,
-              }}
-            />
-            <div className="lp-legend-labels">
-              <span>{formatVal(minVal, selectedMetric)}</span>
-              <span>{formatVal(maxVal, selectedMetric)}</span>
+        {/* INDICATORS — only after a category is chosen */}
+        {categoryFilter && (
+          <>
+            <div className="sb-section-label">
+              {CATEGORIES.find((c) => c.key === categoryFilter)?.label.toUpperCase()} INDICATORS
             </div>
-          </div>
-        </div>
-      )}
+            {indicators.map((key) => {
+              const m = METRICS[key];
+              const active = selectedMetric === key;
+              return (
+                <button key={key} className={`sb-item ${active ? 'active' : ''}`}
+                  onClick={() => onMetricChange(key)}>
+                  <span className="sb-ind-dot" style={{ '--dot': m.hue }}><i /></span>
+                  <span className="sb-item-text">
+                    <span className="sb-item-title">{m.label}</span>
+                    <span className="sb-item-sub">{m.unit}</span>
+                  </span>
+                  {active && <span className="sb-item-chevron"><IconChevron style={{ transform: 'rotate(-90deg)' }} /></span>}
+                </button>
+              );
+            })}
+          </>
+        )}
 
-      <div className="lp-category">
-        <div className="lp-section">DISPLAY</div>
-        <div className="lp-row">
-          <span className="lp-row-label">Dark mode</span>
-          <button
-            className="lp-toggle"
-            data-on={String(!!dark)}
-            onClick={() => onDarkChange(!dark)}
-            aria-pressed={!!dark}
-          >
-            <i />
-          </button>
-        </div>
+        {!categoryFilter && (
+          <div className="sb-hint">Select a category above to browse its indicators.</div>
+        )}
       </div>
 
-      <div className="lp-footer">
-        <div className="lp-source">World Bank · UNDP · TI · WHR</div>
-        <div className="lp-source">2021–2023 data</div>
+      <div className="sb-footer">
+        <div className="sb-footer-name">Drift v1.0.0</div>
+        <div className="sb-footer-sub">© 2026 Global Analytics</div>
       </div>
     </aside>
   );
 }
 
-function formatVal(v, metric) {
-  if (v == null || !Number.isFinite(v)) return '—';
-  switch (metric) {
-    case 'gdp':
-      return v >= 1000 ? '$' + (v / 1000).toFixed(0) + 'k' : '$' + v.toFixed(0);
-    case 'pop_density':
-      return v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(0);
-    case 'hdi':
-      return v.toFixed(2);
-    case 'happiness':
-      return v.toFixed(1);
-    case 'military_exp':
-      return v.toFixed(1) + '%';
-    default:
-      return v.toFixed(1);
-  }
+function NavItem({ icon, title, sub, active, onClick }) {
+  return (
+    <button className={`sb-item ${active ? 'active' : ''}`} onClick={onClick}>
+      <span className="sb-item-icon">{icon}</span>
+      <span className="sb-item-text">
+        <span className="sb-item-title">{title}</span>
+        <span className="sb-item-sub">{sub}</span>
+      </span>
+    </button>
+  );
 }

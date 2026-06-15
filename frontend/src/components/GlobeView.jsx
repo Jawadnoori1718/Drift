@@ -26,9 +26,10 @@ Object.entries(STATIC_COUNTRY_DATA).forEach(([num, v]) => {
 });
 
 const SPIN_SPEEDS = { slow: 8, normal: 22, fast: 45 };
-const DEFAULT_FILL = '#2c3e50';
-const HOVER_FILL   = '#4a90d9';
-const SELECTED_FILL = '#1a2530';
+const DEFAULT_FILL      = '#e3e2f0';   // no-data country (light theme)
+const DEFAULT_FILL_DARK = '#272448';   // no-data country (dark theme)
+const HOVER_FILL        = '#8b7bff';   // accent violet
+const SELECTED_FILL     = '#5a48e8';
 
 /**
  * GlobeView — interactive 3D globe with choropleth metric coloring.
@@ -71,11 +72,13 @@ export default function GlobeView({
   const metricDataRef      = useRef(metricData);
   const colorScaleRef      = useRef(colorScale);
   const hoveredRef         = useRef(null);
+  const darkRef            = useRef(dark);
 
   useEffect(() => { spinningRef.current = spinning; },        [spinning]);
   useEffect(() => { spinSpeedRef.current = spinSpeed; },      [spinSpeed]);
   useEffect(() => { metricDataRef.current = metricData; },    [metricData]);
   useEffect(() => { colorScaleRef.current = colorScale; },    [colorScale]);
+  useEffect(() => { darkRef.current = dark; applyFills(); },  [dark]); // eslint-disable-line
 
   // D3 state bag (mutable, never triggers React renders).
   const stateRef = useRef({
@@ -105,7 +108,7 @@ export default function GlobeView({
   useEffect(() => {
     const SIZE   = size;
     const CENTER = SIZE / 2;
-    const R      = SIZE * 0.41;
+    const R      = SIZE * 0.455;
 
     const svg = d3.select(svgRef.current);
     svg.selectAll('*').remove();
@@ -124,8 +127,9 @@ export default function GlobeView({
 
     const atmoGlow = defs.append('radialGradient')
       .attr('id', 'atmo-glow').attr('cx', '50%').attr('cy', '50%').attr('r', '50%');
-    atmoGlow.append('stop').attr('offset', '76%').attr('stop-color', 'rgba(100,180,230,0)');
-    atmoGlow.append('stop').attr('offset', '100%').attr('stop-color', 'rgba(100,180,230,0.28)');
+    atmoGlow.append('stop').attr('offset', '74%').attr('stop-color', 'rgba(124,58,237,0)');
+    atmoGlow.append('stop').attr('offset', '92%').attr('stop-color', 'rgba(124,58,237,0.20)');
+    atmoGlow.append('stop').attr('offset', '100%').attr('stop-color', 'rgba(139,92,246,0.40)');
 
     // ── Groups (z-order matters) ─────────────────────────────────────────
     const gOuter = svg.append('g').attr('class', 'g-outer');
@@ -139,12 +143,12 @@ export default function GlobeView({
     const gMarkers    = svg.append('g').attr('class', 'g-markers').attr('clip-path', 'url(#sphere-clip)');
 
     // Outer dashed ring
-    gOuter.append('circle').attr('cx', CENTER).attr('cy', CENTER).attr('r', R + 32).attr('class', 'ring-outer');
+    gOuter.append('circle').attr('cx', CENTER).attr('cy', CENTER).attr('r', R + 15).attr('class', 'ring-outer');
 
     // Whirl rings + comet
-    const ringA = gWhirl.append('circle').attr('r', R + 14).attr('class', 'whirl-ring');
-    const ringB = gWhirl.append('circle').attr('r', R + 22).attr('class', 'whirl-ring thin');
-    const cR = R + 14, cSweep = (70 * Math.PI) / 180, ang0 = -cSweep / 2, ang1 = cSweep / 2;
+    const ringA = gWhirl.append('circle').attr('r', R + 8).attr('class', 'whirl-ring');
+    const ringB = gWhirl.append('circle').attr('r', R + 14).attr('class', 'whirl-ring thin');
+    const cR = R + 8, cSweep = (70 * Math.PI) / 180, ang0 = -cSweep / 2, ang1 = cSweep / 2;
     const cometD = `M ${Math.cos(ang0)*cR} ${Math.sin(ang0)*cR} A ${cR} ${cR} 0 0 1 ${Math.cos(ang1)*cR} ${Math.sin(ang1)*cR}`;
     const gComet = gWhirl.append('g');
     gComet.append('path').attr('d', cometD).attr('class', 'comet').attr('stroke-dasharray', '0 6 4 5 8 5 12 5 16 5 22');
@@ -211,6 +215,18 @@ export default function GlobeView({
           return f ? d3.geoCentroid(f) : null;
         },
         animateTo: (rot, dur = 900) => animateRotationTo(rot, dur),
+        zoomBy: (factor) => {
+          const s = stateRef.current;
+          s.scale = Math.max(0.6, Math.min(4, s.scale * factor));
+          s.projection.scale(R * s.scale);
+          drawGlobe();
+        },
+        reset: () => {
+          const s = stateRef.current;
+          s.scale = 1;
+          s.projection.scale(R * s.scale);
+          animateRotationTo([0, -10, 0], 700);
+        },
         getRotation: () => stateRef.current.rotation.slice(),
         getCentroid: (id) => {
           const f = features.find((x) => x.id === id);
@@ -380,6 +396,7 @@ export default function GlobeView({
     const scale     = colorScaleRef.current;
     const hoveredId = hoveredRef.current;
 
+    const noData = darkRef.current ? DEFAULT_FILL_DARK : DEFAULT_FILL;
     s.paths.attr('fill', (d) => {
       if (d.id === hoveredId) return HOVER_FILL;
       if (metric && scale) {
@@ -387,7 +404,7 @@ export default function GlobeView({
         const val  = iso2 ? metric[iso2] : null;
         if (val != null && Number.isFinite(val)) return scale(val);
       }
-      return DEFAULT_FILL;
+      return noData;
     });
   }
 

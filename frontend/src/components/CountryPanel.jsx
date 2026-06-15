@@ -1,369 +1,186 @@
 import { useEffect, useMemo, useState } from 'react';
 import { STATIC_COUNTRY_DATA, flagFromISO2 } from '../data/countries';
+import { METRICS, METRIC_ORDER } from '../data/metrics';
 import { getHistory, getForecast, getSimilar } from '../lib/backend';
 import HistoryChart from './HistoryChart';
+import {
+  IconStar, IconClose, IconArrowRight,
+  IconEconomy, IconSociety, IconEnvironment, IconConnectivity,
+} from './Icons';
 
-const METRIC_DEFS = {
-  gdp: {
-    label: 'GDP per Capita',
-    unit: 'current USD',
-    format: (v) => '$' + v.toLocaleString('en-US', { maximumFractionDigits: 0 }),
-    colorClass: 'blue',
-    description: 'Gross domestic product divided by midyear population.',
-    source: 'World Bank 2022',
-  },
-  co2: {
-    label: 'CO₂ Emissions',
-    unit: 'metric tons per capita',
-    format: (v) => v.toFixed(2) + ' t',
-    colorClass: 'orange',
-    description: 'Carbon dioxide emissions from fossil fuels and cement manufacturing.',
-    source: 'World Bank / Global Carbon Project 2021',
-  },
-  life_expectancy: {
-    label: 'Life Expectancy',
-    unit: 'years at birth',
-    format: (v) => v.toFixed(1) + ' yr',
-    colorClass: 'green',
-    description: 'Average number of years a newborn is expected to live under current mortality rates.',
-    source: 'World Bank 2021',
-  },
-  internet: {
-    label: 'Internet Users',
-    unit: '% of population',
-    format: (v) => v.toFixed(1) + '%',
-    colorClass: 'purple',
-    description: 'Share of individuals who have used the internet in the last 3 months.',
-    source: 'World Bank / ITU 2021',
-  },
-  pop_density: {
-    label: 'Population Density',
-    unit: 'people per km²',
-    format: (v) => v >= 1000 ? (v / 1000).toFixed(1) + 'k /km²' : v.toFixed(1) + ' /km²',
-    colorClass: 'brown',
-    description: 'Number of people per square kilometre of land area.',
-    source: 'World Bank 2022',
-  },
-  gini: {
-    label: 'Inequality (Gini)',
-    unit: 'index 0–100',
-    format: (v) => v.toFixed(1),
-    colorClass: 'red',
-    description: 'Gini coefficient — 0 is perfect equality, 100 is complete inequality.',
-    source: 'World Bank / OECD (latest available)',
-  },
-  unemployment: {
-    label: 'Unemployment Rate',
-    unit: '% of labour force',
-    format: (v) => v.toFixed(1) + '%',
-    colorClass: 'red',
-    description: 'Share of the labour force that is without work but available and seeking employment.',
-    source: 'World Bank / ILO 2022',
-  },
-  urban_pop: {
-    label: 'Urban Population',
-    unit: '% of total',
-    format: (v) => v.toFixed(1) + '%',
-    colorClass: 'purple',
-    description: 'Share of the population living in urban areas as defined by national authorities.',
-    source: 'World Bank / UN 2022',
-  },
-  health_exp: {
-    label: 'Health Expenditure',
-    unit: '% of GDP',
-    format: (v) => v.toFixed(1) + '%',
-    colorClass: 'green',
-    description: 'Current health expenditure as a share of gross domestic product.',
-    source: 'World Bank / WHO 2020',
-  },
-  military_exp: {
-    label: 'Military Expenditure',
-    unit: '% of GDP',
-    format: (v) => v.toFixed(2) + '%',
-    colorClass: 'orange',
-    description: 'All government spending on the armed forces, including salaries, operations, and procurement.',
-    source: 'SIPRI 2022',
-  },
-  infant_mortality: {
-    label: 'Infant Mortality',
-    unit: 'deaths per 1,000 live births',
-    format: (v) => v.toFixed(1),
-    colorClass: 'red',
-    description: 'Probability of dying between birth and age 1, per 1,000 live births.',
-    source: 'World Bank / UN IGME 2021',
-  },
-  forest_cover: {
-    label: 'Forest Cover',
-    unit: '% of land area',
-    format: (v) => v.toFixed(1) + '%',
-    colorClass: 'green',
-    description: 'Land under natural or planted stands of trees of at least 5 metres in situ.',
-    source: 'World Bank / FAO 2021',
-  },
-  electricity_access: {
-    label: 'Electricity Access',
-    unit: '% of population',
-    format: (v) => v.toFixed(1) + '%',
-    colorClass: 'blue',
-    description: 'Share of the population with access to electricity.',
-    source: 'World Bank / IEA 2021',
-  },
-  hdi: {
-    label: 'Human Dev. Index',
-    unit: 'score 0–1',
-    format: (v) => v.toFixed(3),
-    colorClass: 'blue',
-    description: 'Composite index of life expectancy, education, and income per capita.',
-    source: 'UNDP Human Development Report 2022',
-  },
-  happiness: {
-    label: 'Happiness Score',
-    unit: 'score 0–10',
-    format: (v) => v.toFixed(2),
-    colorClass: 'green',
-    description: 'Average life evaluation from the Cantril ladder survey (0 = worst, 10 = best).',
-    source: 'World Happiness Report 2023',
-  },
-  cpi: {
-    label: 'Corruption Index',
-    unit: 'score 0–100',
-    format: (v) => v.toFixed(0),
-    colorClass: 'purple',
-    description: 'Corruption Perceptions Index — higher score means less corruption.',
-    source: 'Transparency International 2023',
-  },
+const CAT_ICON = {
+  economy: IconEconomy, society: IconSociety,
+  environment: IconEnvironment, connectivity: IconConnectivity,
 };
 
 export default function CountryPanel({
-  feature,
-  allMetrics,
-  selectedMetric,
-  yearData,
-  year,
-  isLatestYear,
-  onSelectIso2,
-  onClose,
+  feature, allMetrics, selectedMetric,
+  yearData, year, isLatestYear, onSelectIso2, onMetricChange, onClose,
 }) {
   const meta = STATIC_COUNTRY_DATA[feature?.id];
-  if (!meta) return null;
+  const [iso2, name, capital] = meta || [];
 
-  const [iso2, name, capital, lang] = meta;
-  const flag = flagFromISO2(iso2);
-  const def  = METRIC_DEFS[selectedMetric];
-
-  // Value for the scrubbed year (falls back to latest)
-  const heroData = yearData || allMetrics?.[selectedMetric];
-  const value = heroData?.[iso2];
-
-  // ── Historical series + ML forecast for the chart ──────────────────────
   const [history,  setHistory]  = useState(null);
   const [forecast, setForecast] = useState(null);
   const [similar,  setSimilar]  = useState(null);
+  const [starred,  setStarred]  = useState(false);
 
   useEffect(() => {
+    if (!iso2) return;
     let cancelled = false;
-    setHistory(null);
-    setForecast(null);
-
-    getHistory(iso2, selectedMetric)
-      .then((h) => { if (!cancelled) setHistory(h); })
-      .catch(() => { if (!cancelled) setHistory(null); });
-
-    getForecast(iso2, selectedMetric)
-      .then((f) => { if (!cancelled) setForecast(f); })
-      .catch(() => { if (!cancelled) setForecast(null); });  // not enough history — fine
-
+    setHistory(null); setForecast(null);
+    getHistory(iso2, selectedMetric).then((h) => !cancelled && setHistory(h)).catch(() => !cancelled && setHistory(null));
+    getForecast(iso2, selectedMetric).then((f) => !cancelled && setForecast(f)).catch(() => !cancelled && setForecast(null));
     return () => { cancelled = true; };
   }, [iso2, selectedMetric]);
 
-  // Statistically similar countries (k-means + nearest neighbours)
   useEffect(() => {
+    if (!iso2) return;
     let cancelled = false;
     setSimilar(null);
-    getSimilar(iso2)
-      .then((s) => { if (!cancelled) setSimilar(s); })
-      .catch(() => { if (!cancelled) setSimilar(null); });
+    getSimilar(iso2).then((s) => !cancelled && setSimilar(s)).catch(() => !cancelled && setSimilar(null));
     return () => { cancelled = true; };
   }, [iso2]);
 
+  const def = METRICS[selectedMetric];
+  const heroData = yearData || allMetrics?.[selectedMetric];
+  const value = heroData?.[iso2];
+  const hasValue = value != null && Number.isFinite(value);
+
   const rankInfo = useMemo(() => {
     if (!heroData || value == null) return null;
-    const entries = Object.entries(heroData)
-      .filter(([, v]) => Number.isFinite(v))
-      .sort(([, a], [, b]) => b - a);
+    const entries = Object.entries(heroData).filter(([, v]) => Number.isFinite(v)).sort(([, a], [, b]) => b - a);
     const rank = entries.findIndex(([k]) => k === iso2) + 1;
     const total = entries.length;
     const worldAvg = entries.reduce((s, [, v]) => s + v, 0) / total;
     return { rank, total, worldAvg };
   }, [heroData, iso2, value]);
 
-  const vsAvg = rankInfo && value != null
-    ? ((value - rankInfo.worldAvg) / rankInfo.worldAvg * 100)
-    : null;
+  const vsAvg = rankInfo && hasValue ? (value / rankInfo.worldAvg) : null;
 
-  const hasValue = value != null && Number.isFinite(value);
+  if (!meta) return null;
 
   return (
-    <div className="country-panel">
-      <button className="cp-close" onClick={onClose} aria-label="Close">✕</button>
-
-      {/* Header */}
-      <div className="cp-header">
-        <span className="cp-flag">{flag}</span>
-        <div className="cp-titles">
-          <div className="cp-name">{name}</div>
-          <div className="cp-meta">
-            {capital && <span>{capital}</span>}
-            {lang && <><span className="cp-dot">·</span><span>{lang}</span></>}
+    <aside className="country-panel">
+      {/* header */}
+      <div className="cp-card">
+        <div className="cp-head">
+          <span className="cp-flag">{flagFromISO2(iso2)}</span>
+          <div className="cp-head-text">
+            <div className="cp-name">{name}</div>
+            <div className="cp-sub">{iso2}{capital ? ` · ${capital}` : ''}</div>
           </div>
+          <button className={`cp-star ${starred ? 'on' : ''}`} onClick={() => setStarred((s) => !s)} title="Favourite">
+            <IconStar filled={starred} />
+          </button>
+          <button className="cp-close-x" onClick={onClose} aria-label="Close"><IconClose /></button>
         </div>
       </div>
 
-      {/* Metric hero */}
-      <div className="cp-hero">
-        <div className="cp-hero-label">
-          {def?.label ?? selectedMetric}
-          {year != null && (
-            <span className={`cp-year-chip ${isLatestYear ? 'latest' : ''}`}>
-              {isLatestYear ? 'Latest' : year}
+      {/* hero metric */}
+      <div className="cp-card">
+        <div className="cp-hero-top">
+          <span className="cp-hero-label">
+            {def.label}
+            {year != null && <span className={`cp-year-chip ${isLatestYear ? 'latest' : ''}`}>{isLatestYear ? 'Latest' : year}</span>}
+          </span>
+          {rankInfo && hasValue && (
+            <span className="cp-rank">
+              <div className="cp-rank-label">Rank</div>
+              <div className="cp-rank-val">{rankInfo.rank}</div>
             </span>
           )}
         </div>
-        <div className={`cp-hero-value ${def?.colorClass || ''}`}>
-          {hasValue ? def?.format(value) : '—'}
+        <div className="cp-hero-value" style={{ '--hue': def.hue }}>
+          {hasValue ? def.fmt(value) : '—'}
         </div>
-        {def?.unit && <div className="cp-hero-unit">{def.unit}</div>}
-
-        {rankInfo && hasValue && (
-          <div className="cp-hero-stats">
-            <div className="cp-rank-badge">
-              #{rankInfo.rank} <span className="cp-rank-of">of {rankInfo.total} countries</span>
-            </div>
-            {vsAvg != null && (
-              <div className={`cp-vs-avg ${vsAvg >= 0 ? 'above' : 'below'}`}>
-                {vsAvg >= 0 ? '▲' : '▼'} {Math.abs(vsAvg).toFixed(0)}% vs world avg
-                <span className="cp-avg-val"> ({def?.format(rankInfo.worldAvg)})</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {def?.description && (
-          <div className="cp-hero-desc">{def.description}</div>
-        )}
-        {def?.source && (
-          <div className="cp-hero-source">Source: {def.source}</div>
-        )}
+        <div className="cp-hero-foot">
+          <span className="cp-hero-unit">{def.unit}</span>
+          {vsAvg != null && (
+            <span className={`cp-delta ${vsAvg >= 1 ? 'up' : 'down'}`}>
+              {vsAvg >= 1 ? '▲' : '▼'} {vsAvg.toFixed(2)}× vs World Avg
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Historical chart + ML forecast */}
+      {/* history & forecast */}
       {history && history.length > 1 && (
-        <>
-          <div className="cp-section">
-            HISTORY {forecast && '& 10-YEAR FORECAST'}
+        <div className="cp-card">
+          <div className="cp-card-title">
+            <div>
+              <h4>History & Forecast</h4>
+              <span className="sub">{def.unit}</span>
+            </div>
+            {forecast && <span className="cp-info-i" title={`${forecast.model} model · R² ${forecast.r2?.toFixed(2)}`}>i</span>}
           </div>
-          <div className="cp-chart-wrap">
-            <HistoryChart
-              history={history}
-              forecast={forecast}
-              colorClass={def?.colorClass}
-              formatValue={def?.format}
-            />
-            {forecast && (
-              <div className="cp-forecast-meta">
-                {forecast.model === 'log-linear' && forecast.annual_growth_pct != null
-                  ? <>trend {forecast.annual_growth_pct >= 0 ? '+' : ''}{forecast.annual_growth_pct.toFixed(1)}%/yr</>
-                  : forecast.annual_change != null
-                    ? <>trend {forecast.annual_change >= 0 ? '+' : ''}{formatTrend(forecast.annual_change)}/yr</>
-                    : null}
-                <span className="cp-fm-dot">·</span>
-                fit R² {forecast.r2?.toFixed(2)}
-                <span className="cp-fm-dot">·</span>
-                {forecast.model} model, {forecast.window_start}–{forecast.window_end}
-              </div>
-            )}
-          </div>
-        </>
+          <HistoryChart history={history} forecast={forecast} hue={def.hue} formatValue={def.fmt} />
+          {forecast && (
+            <div className="cp-forecast-meta">
+              {forecast.model === 'log-linear' && forecast.annual_growth_pct != null
+                ? <>trend {forecast.annual_growth_pct >= 0 ? '+' : ''}{forecast.annual_growth_pct.toFixed(1)}%/yr</>
+                : forecast.annual_change != null
+                  ? <>trend {forecast.annual_change >= 0 ? '+' : ''}{formatTrend(forecast.annual_change)}/yr</> : null}
+              <span className="cp-fm-dot">·</span>R² {forecast.r2?.toFixed(2)}
+              <span className="cp-fm-dot">·</span>{forecast.model}
+            </div>
+          )}
+        </div>
       )}
 
-      {/* Statistically similar countries */}
+      {/* similar countries */}
       {similar?.neighbors?.length > 0 && (
-        <>
-          <div className="cp-section">MOST SIMILAR COUNTRIES</div>
+        <div className="cp-card">
+          <div className="cp-card-title"><h4>Similar Countries</h4></div>
           <div className="cp-similar">
-            {similar.neighbors.slice(0, 6).map((nb, i) => {
+            {similar.neighbors.slice(0, 5).map((nb, i) => {
               const maxD = similar.neighbors[similar.neighbors.length - 1].distance || 1;
-              const closeness = Math.max(8, 100 * (1 - nb.distance / (maxD * 1.15)));
+              const score = Math.max(0, 1 - nb.distance / (maxD * 1.25));
               return (
-                <button
-                  key={nb.iso2}
-                  className="cp-sim-row"
-                  onClick={() => onSelectIso2 && onSelectIso2(nb.iso2)}
-                  title={`Statistical distance ${nb.distance.toFixed(2)} — click to view`}
-                >
+                <button key={nb.iso2} className="cp-sim-row" onClick={() => onSelectIso2?.(nb.iso2)}>
                   <span className="cp-sim-rank">{i + 1}</span>
                   <span className="cp-sim-flag">{flagFromISO2(nb.iso2)}</span>
                   <span className="cp-sim-name">{nb.name}</span>
-                  <span className="cp-sim-bar-track">
-                    <span className="cp-sim-bar" style={{ width: `${closeness}%` }} />
-                  </span>
+                  <span className="cp-sim-score">{score.toFixed(2)}</span>
                 </button>
               );
             })}
-            <div className="cp-sim-note">
-              k-means over {similar.features_used} normalized indicators
-              · {similar.countries_compared} countries compared
-            </div>
           </div>
-        </>
+          <button className="cp-viewall-row" onClick={() => onSelectIso2?.(similar.neighbors[0].iso2)}>
+            View All ({similar.countries_compared}) <IconArrowRight style={{ width: 14, height: 14 }} />
+          </button>
+        </div>
       )}
 
-      {/* Quick snapshot of other metrics */}
-      <div className="cp-section">OTHER INDICATORS</div>
-      <div className="cp-snapshot">
-        {Object.entries(METRIC_DEFS)
-          .filter(([key]) => key !== selectedMetric)
-          .map(([key, d]) => {
+      {/* all indicators grid */}
+      <div className="cp-card">
+        <div className="cp-card-title">
+          <h4>All Indicators <span className="sub">(16)</span></h4>
+        </div>
+        <div className="cp-ind-grid">
+          {METRIC_ORDER.filter((k) => k !== selectedMetric).slice(0, 8).map((key) => {
+            const mm = METRICS[key];
             const v = allMetrics?.[key]?.[iso2];
             const hasV = v != null && Number.isFinite(v);
+            const Ic = CAT_ICON[mm.icon];
             return (
-              <div key={key} className="cp-snap-row">
-                <span className="cp-snap-label">{d.label}</span>
-                <span className={`cp-snap-val ${hasV ? d.colorClass : 'faint'}`}>
-                  {hasV ? d.format(v) : '—'}
-                </span>
-              </div>
+              <button key={key} className="cp-ind-cell" onClick={() => onMetricChange?.(key)} title={mm.label}>
+                <span className="cp-ind-ic" style={{ background: mm.hue }}><Ic /></span>
+                <span className="cp-ind-val">{hasV ? mm.short_fmt(v) : '—'}</span>
+                <span className="cp-ind-key">{mm.short}</span>
+              </button>
             );
           })}
+        </div>
       </div>
-
-      {/* External links */}
-      <div className="cp-actions">
-        <a
-          className="cp-action-btn"
-          href={`https://en.wikipedia.org/wiki/${encodeURIComponent(name)}`}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Wikipedia ↗
-        </a>
-        <a
-          className="cp-action-btn"
-          href={`https://www.google.com/maps/search/${encodeURIComponent(name)}`}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Maps ↗
-        </a>
-      </div>
-    </div>
+    </aside>
   );
 }
 
 function formatTrend(v) {
   const a = Math.abs(v);
   if (a >= 1000) return (v / 1000).toFixed(1) + 'k';
-  if (a >= 10)   return v.toFixed(0);
-  if (a >= 0.1)  return v.toFixed(2);
+  if (a >= 10) return v.toFixed(0);
+  if (a >= 0.1) return v.toFixed(2);
   return v.toFixed(3);
 }

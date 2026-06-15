@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="g" x1="6" y1="10" x2="56" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+  </defs>
+  <!-- motion lines -->
+  <g stroke="url(#g)" stroke-width="4.6" stroke-linecap="round">
+    <line x1="7"  y1="23" x2="23" y2="23"/>
+    <line x1="3"  y1="32" x2="19" y2="32" opacity="0.6"/>
+    <line x1="8"  y1="41" x2="21" y2="41" opacity="0.42"/>
+  </g>
+  <!-- D arc -->
+  <path d="M31 13 H34 a19 19 0 0 1 0 38 H31" fill="none" stroke="url(#g)" stroke-width="7" stroke-linecap="round"/>
+  <!-- globe -->
+  <g stroke="url(#g)" stroke-width="2.4" fill="none">
+    <circle cx="31.5" cy="32" r="11.5"/>
+    <ellipse cx="31.5" cy="32" rx="5" ry="11.5"/>
+    <line x1="20" y1="32" x2="43" y2="32"/>
+  </g>
+</svg>
